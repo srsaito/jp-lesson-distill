@@ -69,9 +69,10 @@ def run(cfg: Config) -> Path | None:
         print(f"[pass_a] cached: {transcript_path}")
     else:
         client = client or make_client()
-        print(f"[pass_a] uploading audio and transcribing with {cfg.model} (an hour of audio takes a few minutes)")
+        print(f"[pass_a] uploading audio and transcribing with {cfg.model} "
+              "(an hour of audio takes 10-20 min; dots = transcript streaming in)")
         f = upload_audio(client, audio)
-        transcript: Transcript = generate(client, cfg.model, [f, prompts.PASS_A], Transcript)
+        transcript: Transcript = generate(client, cfg.model, [f, prompts.PASS_A], Transcript, progress=True)
         _save(transcript_path, transcript)
         print(f"[pass_a] {len(transcript.segments)} segments")
     transcript = _load(transcript_path, Transcript)
@@ -84,7 +85,7 @@ def run(cfg: Config) -> Path | None:
         client = client or make_client()
         print("[detect] flagging candidate learning moments")
         prompt = prompts.DETECT.format(transcript=transcript.model_dump_json())
-        cands: CandidateList = generate(client, cfg.model, [prompt], CandidateList)
+        cands: CandidateList = generate(client, cfg.model, [prompt], CandidateList, progress=True)
         _save(candidates_path, cands)
     cands = _load(candidates_path, CandidateList)
     ordered = sorted(cands.candidates, key=lambda c: c.priority, reverse=True)
