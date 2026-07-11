@@ -20,10 +20,30 @@ TRANSIENT = (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, htt
 RETRYABLE_CODES = {429, 500, 503}  # rate limit / transient server errors
 
 
+def _dotenv_key() -> str | None:
+    """GEMINI_API_KEY from a .env in cwd or any parent (repo root when run via uv)."""
+    for d in [Path.cwd(), *Path.cwd().parents]:
+        env_file = d / ".env"
+        if env_file.is_file():
+            for line in env_file.read_text().splitlines():
+                line = line.strip()
+                if line.startswith("GEMINI_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip("'\"") or None
+        if (d / ".git").exists():
+            break
+    return None
+
+
 def make_client() -> genai.Client:
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise SystemExit("GEMINI_API_KEY is not set")
-    return genai.Client(http_options=types.HttpOptions(timeout=30 * 60 * 1000))
+    key = _dotenv_key()
+    if key:
+        print("[gemini] using GEMINI_API_KEY from .env (overrides shell env)")
+    else:
+        key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise SystemExit("GEMINI_API_KEY is not set (shell env or .env in the repo)")
+    # explicit api_key so a stray GOOGLE_API_KEY in the shell can never win
+    return genai.Client(api_key=key, http_options=types.HttpOptions(timeout=30 * 60 * 1000))
 
 
 def upload_audio(client: genai.Client, path: Path) -> types.File:

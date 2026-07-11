@@ -6,8 +6,10 @@ Distill Japanese lesson recordings (1-on-1 with Soso先生) into learning moment
 
 ```sh
 uv sync
-export GEMINI_API_KEY=...   # already in Steven's shell env
+echo 'GEMINI_API_KEY=...' > .env   # the jp-lesson-distill project's key (billed, Tier 1)
 ```
+
+Key resolution: a `GEMINI_API_KEY` in the repo's `.env` (gitignored) wins over the shell environment, and is passed to the SDK explicitly so a stray `GOOGLE_API_KEY` can never take precedence. This keeps the pipeline on its own billed Google Cloud project while the shell's key stays free-tier for other experiments. Without a `.env`, the shell's `GEMINI_API_KEY` is used.
 
 ffmpeg is bundled via the `imageio-ffmpeg` wheel — no system install needed (a system ffmpeg is used if present).
 
