@@ -13,9 +13,11 @@ from pathlib import Path
 
 import httpx
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 TRANSIENT = (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadTimeout)
+RETRYABLE_CODES = {429, 500, 503}  # rate limit / transient server errors
 
 
 def make_client() -> genai.Client:
@@ -67,7 +69,7 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
     return schema.model_validate_json(text)
 
 
-def _with_retry(fn, what: str, attempts: int = 3):
+def _with_retry(fn, what: str, attempts: int = 4):
     for n in range(1, attempts + 1):
         try:
             return fn()
@@ -76,3 +78,9 @@ def _with_retry(fn, what: str, attempts: int = 3):
                 raise
             print(f"[{what}] transient network error ({e.__class__.__name__}), retry {n}/{attempts - 1}…")
             time.sleep(5 * n)
+        except genai_errors.APIError as e:
+            if getattr(e, "code", None) not in RETRYABLE_CODES or n == attempts:
+                raise
+            wait = 30 * n  # free-tier RPM windows are per-minute; back off generously
+            print(f"[{what}] API {e.code} (rate limit/server), waiting {wait}s, retry {n}/{attempts - 1}…")
+            time.sleep(wait)
