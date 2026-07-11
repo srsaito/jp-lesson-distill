@@ -64,6 +64,6 @@ Dedicated diarization (pyannote, Scribe's built-in) clusters voice embeddings ac
 
 Pass A segments and detected candidates carry `"MM:SS"` timestamps that Gemini emits as part of its structured output. These are **model-estimated positions** inferred from progress through the audio token stream (~32 tokens/second), not decoder-aligned word timings — typically accurate to a few seconds, with drift possible deep into an hour. The pipeline never trusts them at fine granularity: Pass B clips are padded ±15 s, and nothing downstream needs better than "somewhere in this window."
 
-### The trade-off, honestly
+### Trade-off
 
 The runner-up (ADR-0002) was ElevenLabs Scribe, a dedicated verbatim-focused STT. On pure transcript mechanics it wins: word-level timestamps, less long-audio hallucination risk. The moment-centric design absorbs those weaknesses — Pass A only *locates* moments, Pass B restores precision where it counts — and in exchange we get the preserve-errors instruction, role-aware diarization, grammar explanations, one vendor/one key, and the only realistic path to Phase 2 (whiteboard video) from the same model. If Pass A transcript quality proves to be the weak link on real lessons, the documented upgrade is a dual-engine diff: Scribe anchors a precise timeline, Gemini keeps doing the understanding, and disagreement regions become free mistake-candidate flags.
