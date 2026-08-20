@@ -32,6 +32,47 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 - **`docs/`** — architecture and design notes.
 - Related vault material: lesson notes `_wiki/日本語の授業/` (General vault); recording-setup notes in Vault-ML under `Coding/MacBook Setup/`.
 
+## Engineering guide (for building/maintaining the transcription pipeline)
+
+### Code map (`src/jp_lesson_distill/`)
+| module | role | rule of thumb |
+|---|---|---|
+| `cli.py` | `distill run` argparse front-end | flags only; no logic |
+| `pipeline.py` | stage orchestration + per-stage caching under `work/<date>/` | every stage = one cached file; idempotent; re-run skips done stages |
+| `gemini.py` | google-genai wrapper: upload, **streamed** structured generation, retry | the only module that talks to the API |
+| `audio.py` | ffmpeg helpers (prep, clip, duration) | bundled `imageio-ffmpeg` binary; no system install assumed; no ffprobe |
+| `prompts.py` | the three stage prompts | the product is the *student's errors* — every prompt says "do not fix" |
+| `models.py` | Pydantic schemas (= Gemini `response_schema`) + `moments.json` contract | changing `Moment`/`MomentsFile` means an ADR (ADR-0003) |
+
+### Dev loop
+- `uv sync` once; `uv run distill run <rec> --date YYYYMMDD` to run. `--skip-pass-b` is the cheap dry run; `--work-dir` isolates experiments.
+- **Smoke test without a real lesson:** `scripts/make_test_lesson.sh` synthesizes a ~1-min lesson with planted errors under `work/test/` (macOS `say`). Run it before touching prompts or schemas.
+- **Offline fixtures** (gitignored, local only): `work/ref-windowed/w{1,2,3}/<date>/transcript.json` are known-good windowed transcripts (`offset.txt` = seconds to add to reach absolute time); `work/20260729/pass_a_partial.attempt1.json` is a real repetition-loop sample. Unit-test parsing, merging, de-dup, loop detection and sanity gates against these — **never against the live API**.
+- Tests: `pytest` under `tests/` (add as a dev dependency when first needed). Anything that calls Gemini is an integration test and must be opt-in (env flag), not part of the default run.
+- Quality gates before closing an issue: smoke test passes; unit tests pass; one real-lesson run if the change touches Pass A.
+
+### Gemini rules (learned the expensive way — see GH #1/#2, epic `jld-hc9`)
+- **Never transcribe a full hour in one call.** Window (~20 min, ~30 s overlap), transcribe per window, shift timestamps by the window offset, de-dup the overlap. Single-pass 60-min calls loop, truncate, or — worst — *silently compress*: valid JSON, plausible density, whole explanations missing.
+- **Always stream** (`generate_content_stream`); a non-streaming hour-long call gets its idle connection reset. Add a per-chunk inactivity watchdog — the HTTP timeout does not fire on a stream that trickles.
+- **Thinking config:** `gemini-pro-latest` is a moving alias (now Gemini 3.x). Use `thinking_level` (`low` for transcription); `thinking_budget` is silently ignored on 3.x. Never send both. Pin the model explicitly and upgrade deliberately.
+- Thinking and answer share the 65,536-token output window. Log `thoughts_token_count` — and treat `None` as "unknown", not zero.
+- Structured output (`response_schema`) + disfluent audio is a known repetition-loop trigger, and this corpus is *made of* disfluencies. Detect loops on the stream tail and abort in seconds; retry that window at a higher temperature.
+- Retry 429/5xx and transient httpx errors with backoff; retries are per window, never per hour.
+- Cost: the Gemini Project has a **$100/mo cap**. An hour of audio ≈ 30 min wall-clock on Pro. Don't burn lessons on experiments — use the synthetic lesson or a single window.
+
+### Transcription invariants (what "correct" means here)
+- **Verbatim beats fluent.** A transcript that fixes the student's grammar is wrong even if it reads better. Mispronunciations are rendered in kana as heard.
+- **Timestamps are load-bearing:** Pass B clips ±15 s around Pass A timestamps, so a timestamp error silently voids the verbatim re-listen. Segment starts must be monotonic, per-turn, and ≤ ~30 s apart in speech; a conversational hour yields roughly 600–800 segments — far fewer means compression, not a quiet lesson.
+- **Diarization is binary and named:** `teacher` (Soso先生) / `student` (Steven). Spot-check lines like 「スティーブンさんはどうですか？」 land on the teacher.
+- `uncertain: true` is a feature, not a failure — garbled spots are candidate mistake sites and flow into detect.
+- Japanese text: normal kana/kanji orthography, 「」 for quotes, no furigana markup in this repo (that belongs to the vault's card rules).
+
+### Don'ts
+- Don't commit anything under `work/`, audio of any kind, or `.env`.
+- Don't add card-generation logic here (lives in the General vault).
+- Don't "fix" a hang by raising timeouts — find out why the stream stalled.
+- Don't trust a Pass A run because it validated; check coverage (last timestamp ≈ audio length) and density.
+
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
