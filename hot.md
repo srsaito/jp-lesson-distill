@@ -1,7 +1,7 @@
 # jp-lesson-distill — Hot State
 
 ## API key / billing setup (2026-07-10, settled)
-- This pipeline uses its **own Google Cloud project ("Gemini Project"**, Tier 1 paid, **$50/mo spend cap**) via `GEMINI_API_KEY` in the repo's gitignored `.env` — which overrides shell env (the shell's key belongs to the **FlashGen project, $20/mo cap**; both under the same billing account, $250 account cap). Verified working.
+- This pipeline uses its **own Google Cloud project ("Gemini Project"**, Tier 1 paid, **$100/mo spend cap**) via `GEMINI_API_KEY` in the repo's gitignored `.env` — which overrides shell env (the shell's key belongs to the **FlashGen project, $20/mo cap**; both under the same billing account, $250 account cap). Verified working.
 - The 7/9–7/10 "rate limiting" mystery: an auto-set experimental **$3.87/mo spend cap** on the FlashGen project — hit mid-run and surfaced as 429s. Not free-tier RPM (the account was Tier 1 all along).
 
 ## Snapshot (2026-07-09)
