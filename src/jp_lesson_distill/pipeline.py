@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import prompts
-from .audio import clip_audio, duration_seconds, prep_audio
+from .audio import clip_audio, duration_seconds, prep_audio, split_windows
 from .gemini import audio_part, generate, make_client, upload_audio
 from .models import (
     Candidate,
@@ -17,6 +17,7 @@ from .models import (
     Moment,
     MomentsFile,
     Relisten,
+    Segment,
     Transcript,
     fmt_ts,
     parse_ts,
@@ -34,6 +35,8 @@ class Config:
     out_dir: Path = Path("/Users/stevensaito/Docs/Vault-GeneralNotes/_raw")
     skip_pass_b: bool = False
     max_moments: int = 40
+    window_minutes: float = 20.0  # 0 = transcribe the whole recording in one call
+    overlap_seconds: float = 30.0
 
     @property
     def lesson_date(self) -> str:
@@ -64,18 +67,12 @@ def run(cfg: Config) -> Path | None:
     print(f"[prep] duration {fmt_ts(total)}")
 
     # pass A
-    transcript_path = work / "transcript.json"
-    if transcript_path.exists():
-        print(f"[pass_a] cached: {transcript_path}")
-    else:
+    def get_client():
+        nonlocal client
         client = client or make_client()
-        print(f"[pass_a] uploading audio and transcribing with {cfg.model} "
-              "(an hour of audio takes 10-20 min; dots = transcript streaming in)")
-        f = upload_audio(client, audio)
-        transcript: Transcript = generate(client, cfg.model, [f, prompts.PASS_A], Transcript, progress=True)
-        _save(transcript_path, transcript)
-        print(f"[pass_a] {len(transcript.segments)} segments")
-    transcript = _load(transcript_path, Transcript)
+        return client
+
+    transcript = _pass_a(cfg, work, audio, total, get_client)
 
     # detect
     candidates_path = work / "candidates.json"
@@ -143,6 +140,113 @@ def run(cfg: Config) -> Path | None:
     _emit_transcript(cfg, transcript)
     print(f"[emit] {dest}")
     return dest
+
+
+def _pass_a(cfg: Config, work: Path, audio: Path, total: float, get_client) -> Transcript:
+    """Transcribe the recording window by window and merge (see ADR-0005).
+
+    One Gemini call per window, each cached as transcript_w<NN>.json so a failed
+    window retries alone; the merged result is transcript.json, which is what every
+    later stage reads.
+    """
+    transcript_path = work / "transcript.json"
+    if transcript_path.exists():
+        print(f"[pass_a] cached: {transcript_path}")
+        return _load(transcript_path, Transcript)
+
+    win_s = cfg.window_minutes * 60
+    windows = split_windows(audio, work / "windows", win_s=win_s,
+                            overlap_s=cfg.overlap_seconds, total=total)
+    if len(windows) == 1:
+        print(f"[pass_a] single pass over the whole recording ({fmt_ts(total)})")
+    else:
+        print(f"[pass_a] {len(windows)} windows of {cfg.window_minutes:g} min "
+              f"with {cfg.overlap_seconds:g}s overlap")
+
+    parts: list[list[Segment]] = []
+    offsets: list[float] = []
+    for i, (path, offset) in enumerate(windows, start=1):
+        wpath = work / f"transcript_w{i:02d}.json"
+        if wpath.exists():
+            print(f"[pass_a] window {i}/{len(windows)} cached: {wpath}")
+        else:
+            client = get_client()
+            span = f"{fmt_ts(offset)}-{fmt_ts(min(total, offset + win_s) if win_s else total)}"
+            print(f"[pass_a] window {i}/{len(windows)} {span}: uploading and transcribing "
+                  f"with {cfg.model} (dots = transcript streaming in)")
+            wt: Transcript = generate(client, cfg.model, [upload_audio(client, path), prompts.PASS_A],
+                                      Transcript, progress=True)
+            _save(wpath, wt)
+            print(f"[pass_a] window {i}/{len(windows)}: {len(wt.segments)} segments")
+        parts.append(_load(wpath, Transcript).segments)
+        offsets.append(offset)
+
+    transcript = merge_windows(parts, offsets, win_s=win_s, total=total,
+                               overlap_s=cfg.overlap_seconds)
+    _save(transcript_path, transcript)
+    last = parse_ts(transcript.segments[-1].start) if transcript.segments else 0.0
+    print(f"[pass_a] {len(transcript.segments)} segments, "
+          f"last at {fmt_ts(last)} of {fmt_ts(total)}")
+    return transcript
+
+
+def merge_windows(parts: list[list[Segment]], offsets: list[float], win_s: float,
+                  total: float, overlap_s: float = 30.0) -> Transcript:
+    """Shift each window's timestamps to absolute time and stitch the windows together.
+
+    Each overlap region is split at its midpoint: window N owns everything before it,
+    window N+1 everything after, so no utterance is transcribed into the merged output
+    twice and none is dropped. Segments a model placed past its own window are discarded
+    rather than trusted — generously past the end for the final window, which has no
+    successor to cover for it.
+    """
+    kept: list[tuple[float, Segment]] = []
+    for i, (segments, offset) in enumerate(zip(parts, offsets, strict=True)):
+        end = min(total, offset + win_s) if win_s else total
+        lo = -1.0 if i == 0 else (offsets[i] + min(total, offsets[i - 1] + win_s)) / 2
+        # The last window has no successor to own its tail, so it keeps everything up to
+        # the end of the recording plus a drift allowance — models overshoot their own
+        # span by tens of seconds (see the last-timestamp drift in any window). Past that
+        # it is loop garbage, not lesson.
+        hi = end + max(60.0, 0.1 * win_s) if i == len(parts) - 1 else (offsets[i + 1] + end) / 2
+        for seg in segments:
+            try:
+                start = parse_ts(seg.start) + offset
+            except ValueError:
+                continue  # a malformed timestamp cannot be placed; drop it
+            if lo <= start < hi:
+                kept.append((start, seg))
+    kept.sort(key=lambda pair: pair[0])
+    return Transcript(segments=[
+        seg.model_copy(update={"start": fmt_ts(start)})
+        for start, seg in _drop_seam_duplicates(kept, overlap_s)
+    ])
+
+
+def _drop_seam_duplicates(kept: list[tuple[float, Segment]], overlap_s: float) -> list[tuple[float, Segment]]:
+    """Drop a repeat of the same line by the same speaker near a seam.
+
+    The midpoint rule already prevents duplicates, but two windows can time the same
+    utterance a second or two apart and straddle the midpoint with it.
+    """
+    span = max(overlap_s, 5.0)
+    out: list[tuple[float, Segment]] = []
+    for start, seg in kept:
+        key = _norm(seg.text)
+        duplicate = False
+        for prev, other in reversed(out):
+            if start - prev > span:
+                break
+            if key and other.speaker == seg.speaker and _norm(other.text) == key:
+                duplicate = True
+                break
+        if not duplicate:
+            out.append((start, seg))
+    return out
+
+
+def _norm(text: str) -> str:
+    return "".join(c for c in text if c not in " \t\u3000、。，．,.！？!?「」『』…")
 
 
 def _relisten(client, model: str, clip: Path, cand: Candidate) -> Relisten:

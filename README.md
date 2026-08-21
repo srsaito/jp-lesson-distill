@@ -25,9 +25,13 @@ uv run distill run ~/OneDrive/…/lesson.mov --date 20260707
 #   --work-dir PATH            stage cache (default: ./work)
 #   --skip-pass-b              stop after detection (cheap dry run)
 #   --max-moments N            cap Pass B clips (default 40)
+#   --window-minutes N         Pass A window length (default 20; 0 = one call)
+#   --overlap-seconds N        overlap between windows (default 30)
 ```
 
-Stages cache under `work/<date>/` (`audio.m4a`, `transcript.json`, `candidates.json`, `moments.json`, `clips/`). Re-runs skip completed stages; delete a stage file to redo it — e.g. delete `candidates.json` after editing the detection prompt without re-transcribing the hour.
+Stages cache under `work/<date>/` (`audio.m4a`, `windows/`, `transcript_w<NN>.json`, `transcript.json`, `candidates.json`, `moments.json`, `clips/`). Re-runs skip completed stages; delete a stage file to redo it — e.g. delete `candidates.json` after editing the detection prompt without re-transcribing the hour, or delete a single `transcript_w<NN>.json` to redo one bad window.
+
+Pass A never sends the whole hour in one call — it cuts the audio into ~20-minute windows overlapping by 30 s, transcribes each on its own, and merges them back into one `transcript.json`, splitting each overlap at its midpoint (ADR-0005). A single hour-long call loops, truncates, or silently compresses: valid JSON with the middle of the lesson quietly missing.
 
 Output lands in the General vault `_raw/` as `YYYYMMDD-moments.json` + `YYYYMMDD-transcript.md`, then `/distill-jp-lesson` (a General-vault Claude skill) fuses them with the lesson note and generates Anki cards via FlashGen.
 
@@ -62,7 +66,7 @@ Dedicated diarization (pyannote, Scribe's built-in) clusters voice embeddings ac
 
 ### Timestamps: estimated, not measured
 
-Pass A segments and detected candidates carry `"MM:SS"` timestamps that Gemini emits as part of its structured output. These are **model-estimated positions** inferred from progress through the audio token stream (~32 tokens/second), not decoder-aligned word timings — typically accurate to a few seconds, with drift possible deep into an hour. The pipeline never trusts them at fine granularity: Pass B clips are padded ±15 s, and nothing downstream needs better than "somewhere in this window."
+Pass A segments and detected candidates carry `"MM:SS"` timestamps that Gemini emits as part of its structured output. These are **model-estimated positions** inferred from progress through the audio token stream (~32 tokens/second), not decoder-aligned word timings — typically accurate to a few seconds, with drift growing the deeper into a call they are. Windowed Pass A bounds that: every window's clock restarts at zero and only ~20 minutes of drift can accumulate before the merge re-anchors it to absolute time. The pipeline never trusts them at fine granularity: Pass B clips are padded ±15 s, and nothing downstream needs better than "somewhere in this window."
 
 ### Trade-off
 

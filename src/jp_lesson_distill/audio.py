@@ -51,3 +51,45 @@ def duration_seconds(path: Path) -> float:
         raise RuntimeError(f"could not read duration of {path}")
     h, mi, s = m.groups()
     return int(h) * 3600 + int(mi) * 60 + float(s)
+
+
+def window_starts(total: float, win_s: float, overlap_s: float) -> list[float]:
+    """Start offsets of overlapping windows covering `total` seconds.
+
+    Pure planning half of `split_windows` (no ffmpeg), so it can be unit-tested.
+    An empty list means "no windowing" — the caller uses the file as-is.
+    """
+    if win_s <= 0 or total <= win_s:
+        return []
+    overlap_s = max(0.0, min(overlap_s, win_s / 2))
+    stride = win_s - overlap_s
+    starts, s = [], 0.0
+    while s < total:
+        starts.append(s)
+        s += stride
+    # A trailing sliver shorter than the overlap carries no speech the previous
+    # window doesn't already have — drop it and let that window run to the end.
+    if len(starts) > 1 and total - starts[-1] <= overlap_s:
+        starts.pop()
+    return starts
+
+
+def split_windows(src: Path, out_dir: Path, win_s: float = 20 * 60,
+                  overlap_s: float = 30.0, total: float | None = None) -> list[tuple[Path, float]]:
+    """Cut `src` into overlapping windows by stream copy. Returns [(path, offset_s)].
+
+    Recordings at or under one window (and win_s <= 0) come back as [(src, 0.0)] —
+    no copy, no windowing. Existing window files are reused.
+    """
+    total = duration_seconds(src) if total is None else total
+    starts = window_starts(total, win_s, overlap_s)
+    if not starts:
+        return [(src, 0.0)]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    windows = []
+    for i, start in enumerate(starts, start=1):
+        dst = out_dir / f"w{i:02d}{src.suffix}"
+        if not dst.exists():
+            clip_audio(src, dst, start, min(total, start + win_s))
+        windows.append((dst, start))
+    return windows

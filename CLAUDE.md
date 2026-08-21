@@ -23,7 +23,7 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 - **Recordings are canonical in OneDrive** (ADR-0004). The CLI takes any local path (incl. the OneDrive sync folder). Never commit audio to this repo; never store recordings in the Obsidian vaults.
 
 ## Running
-- `uv run distill run <recording> --date YYYYMMDD` — full pipeline. Stage outputs cache under `work/YYYYMMDD/`; re-runs skip completed stages (delete a stage file to redo it).
+- `uv run distill run <recording> --date YYYYMMDD` — full pipeline. Stage outputs cache under `work/YYYYMMDD/`; re-runs skip completed stages (delete a stage file to redo it). Pass A windows the recording internally (`--window-minutes` / `--overlap-seconds`, ADR-0005) and caches each window as `transcript_w<NN>.json` — delete one to redo just that window.
 - Requires `GEMINI_API_KEY` in the environment. ffmpeg resolves from the `imageio-ffmpeg` wheel (no system install needed).
 
 ## How this workstream is organized
@@ -38,9 +38,9 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 | module | role | rule of thumb |
 |---|---|---|
 | `cli.py` | `distill run` argparse front-end | flags only; no logic |
-| `pipeline.py` | stage orchestration + per-stage caching under `work/<date>/` | every stage = one cached file; idempotent; re-run skips done stages |
+| `pipeline.py` | stage orchestration + per-stage caching under `work/<date>/`; windowed Pass A and the overlap merge | every stage = one cached file; idempotent; re-run skips done stages |
 | `gemini.py` | google-genai wrapper: upload, **streamed** structured generation, retry | the only module that talks to the API |
-| `audio.py` | ffmpeg helpers (prep, clip, duration) | bundled `imageio-ffmpeg` binary; no system install assumed; no ffprobe |
+| `audio.py` | ffmpeg helpers (prep, window split, clip, duration) | bundled `imageio-ffmpeg` binary; no system install assumed; no ffprobe |
 | `prompts.py` | the three stage prompts | the product is the *student's errors* — every prompt says "do not fix" |
 | `models.py` | Pydantic schemas (= Gemini `response_schema`) + `moments.json` contract | changing `Moment`/`MomentsFile` means an ADR (ADR-0003) |
 
@@ -48,11 +48,11 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 - `uv sync` once; `uv run distill run <rec> --date YYYYMMDD` to run. `--skip-pass-b` is the cheap dry run; `--work-dir` isolates experiments.
 - **Smoke test without a real lesson:** `scripts/make_test_lesson.sh` synthesizes a ~1-min lesson with planted errors under `work/test/` (macOS `say`). Run it before touching prompts or schemas.
 - **Offline fixtures** (gitignored, local only): `work/ref-windowed/w{1,2,3}/<date>/transcript.json` are known-good windowed transcripts (`offset.txt` = seconds to add to reach absolute time); `work/20260729/pass_a_partial.attempt1.json` is a real repetition-loop sample. Unit-test parsing, merging, de-dup, loop detection and sanity gates against these — **never against the live API**.
-- Tests: `pytest` under `tests/` (add as a dev dependency when first needed). Anything that calls Gemini is an integration test and must be opt-in (env flag), not part of the default run.
+- Tests: `uv run pytest` (`tests/`, pytest is in the `dev` dependency group). Anything that calls Gemini is an integration test and must be opt-in (env flag), not part of the default run.
 - Quality gates before closing an issue: smoke test passes; unit tests pass; one real-lesson run if the change touches Pass A.
 
 ### Gemini rules (learned the expensive way — see GH #1/#2, epic `jld-hc9`)
-- **Never transcribe a full hour in one call.** Window (~20 min, ~30 s overlap), transcribe per window, shift timestamps by the window offset, de-dup the overlap. Single-pass 60-min calls loop, truncate, or — worst — *silently compress*: valid JSON, plausible density, whole explanations missing.
+- **Never transcribe a full hour in one call.** Pass A does this for you (ADR-0005): ~20 min windows, ~30 s overlap, per-window transcription, offset-shifted timestamps, overlap split at its midpoint. Single-pass 60-min calls loop, truncate, or — worst — *silently compress*: valid JSON, plausible density, whole explanations missing. `--window-minutes 0` restores the single call; it exists for regression checks on short recordings, not for lessons.
 - **Always stream** (`generate_content_stream`); a non-streaming hour-long call gets its idle connection reset. Add a per-chunk inactivity watchdog — the HTTP timeout does not fire on a stream that trickles.
 - **Thinking config:** `gemini-pro-latest` is a moving alias (now Gemini 3.x). Use `thinking_level` (`low` for transcription); `thinking_budget` is silently ignored on 3.x. Never send both. Pin the model explicitly and upgrade deliberately.
 - Thinking and answer share the 65,536-token output window. Log `thoughts_token_count` — and treat `None` as "unknown", not zero.
