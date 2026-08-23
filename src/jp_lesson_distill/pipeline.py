@@ -22,6 +22,7 @@ from .models import (
     fmt_ts,
     parse_ts,
 )
+from .quality import WindowReport, evaluate
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
 
@@ -37,6 +38,7 @@ class Config:
     max_moments: int = 40
     window_minutes: float = 20.0  # 0 = transcribe the whole recording in one call
     overlap_seconds: float = 30.0
+    window_attempts: int = 2  # re-rolls of a window the sanity gates reject
 
     @property
     def lesson_date(self) -> str:
@@ -167,17 +169,15 @@ def _pass_a(cfg: Config, work: Path, audio: Path, total: float, get_client) -> T
     offsets: list[float] = []
     for i, (path, offset) in enumerate(windows, start=1):
         wpath = work / f"transcript_w{i:02d}.json"
+        tag = f"window {i}/{len(windows)}"
+        window_s = duration_seconds(path) if len(windows) > 1 else total
         if wpath.exists():
-            print(f"[pass_a] window {i}/{len(windows)} cached: {wpath}")
+            print(f"[pass_a] {tag} cached: {wpath}")
+            _report(tag, _load(wpath, Transcript).segments, window_s, cached=True)
         else:
-            client = get_client()
             span = f"{fmt_ts(offset)}-{fmt_ts(min(total, offset + win_s) if win_s else total)}"
-            print(f"[pass_a] window {i}/{len(windows)} {span}: uploading and transcribing "
-                  f"with {cfg.model} (dots = transcript streaming in)")
-            wt: Transcript = generate(client, cfg.model, [upload_audio(client, path), prompts.PASS_A],
-                                      Transcript, progress=True)
+            wt = _transcribe_window(cfg, get_client, path, tag, span, window_s, wpath)
             _save(wpath, wt)
-            print(f"[pass_a] window {i}/{len(windows)}: {len(wt.segments)} segments")
         parts.append(_load(wpath, Transcript).segments)
         offsets.append(offset)
 
@@ -188,6 +188,53 @@ def _pass_a(cfg: Config, work: Path, audio: Path, total: float, get_client) -> T
     print(f"[pass_a] {len(transcript.segments)} segments, "
           f"last at {fmt_ts(last)} of {fmt_ts(total)}")
     return transcript
+
+
+def _transcribe_window(cfg: Config, get_client, audio: Path, tag: str, span: str,
+                       window_s: float, wpath: Path) -> Transcript:
+    """Transcribe one window, re-rolling it while the sanity gates say it is degraded.
+
+    A degraded window is worth a retry precisely because it is one window: the call
+    is minutes, not half an hour. Attempts are kept next to the window as
+    transcript_w<NN>.attempt<N>.json, and if every attempt fails the least-bad one
+    is promoted so the run can continue — loudly — rather than dying an hour in.
+    """
+    attempts: list[tuple[Transcript, WindowReport]] = []
+    for n in range(1, max(1, cfg.window_attempts) + 1):
+        client = get_client()
+        # Structured output on disfluent audio loops; a warmer retry breaks the loop.
+        temperature = 0.2 + 0.2 * (n - 1)
+        note = "" if n == 1 else f" (attempt {n}, temperature {temperature:g})"
+        print(f"[pass_a] {tag} {span}: uploading and transcribing with {cfg.model}{note} "
+              "(dots = transcript streaming in)")
+        wt: Transcript = generate(client, cfg.model, [upload_audio(client, audio), prompts.PASS_A],
+                                  Transcript, temperature=temperature, progress=True)
+        report = _report(tag, wt.segments, window_s)
+        attempts.append((wt, report))
+        if report.ok:
+            return wt
+        if n < max(1, cfg.window_attempts):
+            _save(wpath.with_suffix(f".attempt{n}.json"), wt)
+            print(f"[pass_a] {tag}: retrying this window (the other windows are unaffected)")
+
+    best, report = min(attempts, key=lambda pair: (len(pair[1].failures), -pair[1].coverage))
+    print(f"[pass_a] {tag}: ALL {len(attempts)} attempts failed the sanity gates; "
+          f"keeping the least-bad one ({report.summary()}). Delete {wpath.name} and re-run "
+          "to try again, or accept it knowing this window is degraded.")
+    return best
+
+
+def _report(tag: str, segments: list[Segment], duration: float, cached: bool = False) -> WindowReport:
+    """Print one stats line per window, plus whatever the gates have to say."""
+    report = evaluate(segments, duration)
+    print(f"[pass_a] {tag}: {report.summary()}")
+    for check in report.failures:
+        print(f"[pass_a] {tag}: FAILED {check.name} — {check.detail}")
+    for check in report.warnings:
+        print(f"[pass_a] {tag}: warning: {check.name} — {check.detail}")
+    if cached and report.failures:
+        print(f"[pass_a] {tag}: cached window is degraded; delete its file to re-transcribe it")
+    return report
 
 
 def merge_windows(parts: list[list[Segment]], offsets: list[float], win_s: float,

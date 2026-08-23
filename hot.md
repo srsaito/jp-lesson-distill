@@ -7,6 +7,12 @@
 ## Snapshot (2026-07-09)
 Project bootstrapped from a design session in the ML vault: charter, ADRs 0001–0004, architecture doc, and the Phase-1 audio pipeline implemented (`distill` CLI: prep → Pass A transcript → moment detection → Pass B re-listen → emit to vault `_raw/`). Vault-side `/distill-jp-lesson` skill created in the General vault.
 
+## Where we left off (2026-08-21 — Pass A sanity gates, jld-hc9.4)
+- **`quality.py` gates every Pass A window** before accepting it, and re-rolls a failing window at a higher temperature (`--window-attempts`, default 2). Failed attempts are kept as `transcript_w<NN>.attempt<N>.json`; if all attempts fail, the least-bad one is promoted loudly instead of killing the run. Every window now prints one stats line, so degradation is visible in the log.
+- **The threshold in the original issue was wrong and the measurement says so.** Segments-per-minute does NOT detect degradation: the known-bad 2026-08-17 single-pass run is 7.0/min, *inside* the 4.6–9.6/min range of known-good windows (chars/min is no better: bad 177, good 162–205). What separates them is **coverage** (89% vs 100%), **dead time** (8.1 min of audio behind under 1 char/s vs 0 min) and **max span** (361 s in one segment vs ≤74 s). Density is now logged, never gated.
+- **Duplicates only warn.** In the bad run they are the failure mechanism — four consecutive lines from 11:13–13:04 re-emitted verbatim at 20:12–21:03, i.e. the model lost its place and replayed an earlier block over eight minutes of real audio. But the 2026-07-07 run's 11 duplicates are three passes over one textbook dialogue (「木村さん、ネットでパソコン買ったことありますか？」), a genuine drill. They look structurally identical; coverage and dead time are what tell them apart.
+- 25 offline tests (`uv run pytest`). The 2026-07-07 run is *not* degraded, despite failing both thresholds the issue originally proposed — its 590-char segment is 3.5 chars/s of continuous speech, merely under-split.
+
 ## Where we left off (2026-08-20 — windowed Pass A, jld-hc9.2)
 - **Pass A now windows the recording internally** (ADR-0005): ~20 min windows / 30 s overlap, one Gemini call each, cached as `work/<date>/transcript_w<NN>.json`, merged into the usual `transcript.json` by shifting each window's timestamps and splitting every overlap at its midpoint. `--window-minutes` / `--overlap-seconds` on the CLI; `0` = the old single call. Detect/Pass B/emit untouched.
 - **Verified on the 2026-08-17 recording (56:00):** 437 segments, last at 55:56, monotonic, no duplicates, no empty 5-minute stretch — against 394 segments stopping at 49:59 for the old single-pass run of the same lesson. All 313 reference lines from the hand-staged windows (`work/ref-windowed/`) are present in the merge. Wall clock **~5 min** for all three windows (the single hour-long call was ~30). Output lives in `work/hc9-2-verify/20260817/` (better than the compressed `work/20260817/transcript.json` — treat that one as the cautionary sample, not a reference).
@@ -20,6 +26,7 @@ Project bootstrapped from a design session in the ML vault: charter, ADRs 0001�
 
 ## Next actions
 - [ ] `jld-hc9.3` (stream watchdog) is now the top of the epic — the stall above will bite a real lesson eventually.
+- [ ] `jld-dli` (diarization repair) is designed but unbuilt: cue anchors (「スティーブンさん」/「先生」/「奥さん」/「妻」) + phase-block detection + disfluency evidence, with the textbook script (`Z_L13.pdf` has 会話13-11 with 利用者/司書 role labels) as an optional bonus, never a dependency. Open design question: whether the repo gets an optional `--textbook-pdf` input or the repair moves vault-side where the lesson note already maps the roleplay stretches.
 - [ ] Run `/distill-jp-lesson` in the General vault on the 20260707 output; create the first delta cards via FlashGen.
 - [ ] Spot-check a few moments against the actual audio timestamps (are t_start/t_end accurate enough for clip review?).
 - [ ] Tune prompts if the card session reveals noise (false uncorrected-errors, missed hesitations — note: 0 hesitation moments were flagged this run; check if the detect prompt undersells them).

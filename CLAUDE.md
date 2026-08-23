@@ -43,6 +43,7 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 | `audio.py` | ffmpeg helpers (prep, window split, clip, duration) | bundled `imageio-ffmpeg` binary; no system install assumed; no ffprobe |
 | `prompts.py` | the three stage prompts | the product is the *student's errors* — every prompt says "do not fix" |
 | `models.py` | Pydantic schemas (= Gemini `response_schema`) + `moments.json` contract | changing `Moment`/`MomentsFile` means an ADR (ADR-0003) |
+| `quality.py` | per-window sanity gates on Pass A output | thresholds are calibrated against real transcripts, never guessed; re-check them if you change them |
 
 ### Dev loop
 - `uv sync` once; `uv run distill run <rec> --date YYYYMMDD` to run. `--skip-pass-b` is the cheap dry run; `--work-dir` isolates experiments.
@@ -71,7 +72,7 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 - Don't commit anything under `work/`, audio of any kind, or `.env`.
 - Don't add card-generation logic here (lives in the General vault).
 - Don't "fix" a hang by raising timeouts — find out why the stream stalled.
-- Don't trust a Pass A run because it validated; check coverage (last timestamp ≈ audio length) and density.
+- Don't trust a Pass A run because it validated — `quality.py` now checks it for you, per window, and retries a window that fails. **Density does not detect degradation**: the known-bad 2026-08-17 single-pass run is 7.0 segments/min, inside the 4.6–9.6 range of known-good windows. What separates them is coverage (89% vs 100%), dead time (8.1 min of audio behind almost no text vs 0), and max span (361 s in one segment vs ≤74 s). Duplicate lines only warn — three passes over one textbook dialogue is a normal drill.
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->

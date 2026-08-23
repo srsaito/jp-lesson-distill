@@ -25,7 +25,7 @@ Every stage writes its output to `work/<date>/` and is skipped on re-run if the 
 | Stage | Input | Output (`work/<date>/`) | Model call |
 |---|---|---|---|
 | prep | recording path | `audio.m4a` | — |
-| pass_a | `audio.m4a` | `windows/w<NN>.m4a`, `transcript_w<NN>.json`, merged `transcript.json` | Gemini, Files API upload, structured output — one call per window |
+| pass_a | `audio.m4a` | `windows/w<NN>.m4a`, `transcript_w<NN>.json`, merged `transcript.json` | Gemini, Files API upload, structured output — one call per window, gated and retried |
 | detect | `transcript.json` | `candidates.json` | Gemini, text-only |
 | pass_b | `candidates.json` + clips | `moments.json` | Gemini per clip (clips in `clips/`) |
 | emit | transcript + moments | vault `_raw/` files | — |
@@ -37,6 +37,14 @@ A single Gemini call on a full hour loops, truncates, or silently compresses —
 Merging is mechanical, not model work: each window's `MM:SS` timestamps are shifted by that window's offset into absolute recording time, and each overlap region is split at its **midpoint** — window N keeps everything before it, window N+1 everything after — so no utterance lands in the transcript twice and none falls between windows. Segments timestamped past their own window, or past the end of the recording, are dropped instead of trusted.
 
 Each window caches to its own `transcript_w<NN>.json`, so a bad window is re-run by deleting that one file. `transcript.json` remains the merged, single-transcript output every later stage reads — windowing is invisible past this stage.
+
+## Sanity gates (jld-hc9.4)
+
+A degraded transcription is well-formed. It validates against the schema, reads plausibly, and gives no sign that the middle of the lesson is missing — so Pass A checks each window before accepting it, while re-rolling that window still costs minutes rather than half an hour.
+
+Four gates fail a window and buy a retry at a higher temperature: **coverage** (the last segment must start near the end of the window), **monotonic** timestamps, **dead time** (audio sitting inside spans that transcribe under one character per second), and **max span** (no single segment covering more than 180 s). Three more only warn, because retrying cannot help them: a density floor, under-split turns, and repeated lines — three passes over the same textbook dialogue is a drill, not a defect.
+
+Notably **segments-per-minute is not a gate**. Measured across every transcript on hand, the known-degraded 2026-08-17 run sits at 7.0/min, inside the 4.6–9.6/min range of the known-good windows; coverage (89% vs 100%) and dead time (8.1 min vs 0) separate them cleanly. Attempts that fail are kept as `transcript_w<NN>.attempt<N>.json`; if every attempt fails, the least-bad one is promoted with a loud warning rather than killing an hour-long run.
 
 ## Moment taxonomy
 

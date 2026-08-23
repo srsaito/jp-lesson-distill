@@ -26,6 +26,9 @@ def main() -> None:
                         "recording; only safe under ~20 min)")
     p.add_argument("--overlap-seconds", type=float, default=30.0,
                    help="overlap between consecutive windows; the merge splits it at its midpoint")
+    p.add_argument("--window-attempts", type=int, default=2,
+                   help="how many times to transcribe a window that fails the sanity gates "
+                        "(1 = never retry; the least-bad attempt is kept either way)")
 
     args = parser.parse_args()
     if not re.fullmatch(r"\d{8}", args.date):
@@ -39,6 +42,7 @@ def main() -> None:
             work_dir=args.work_dir, out_dir=args.out_dir,
             skip_pass_b=args.skip_pass_b, max_moments=args.max_moments,
             window_minutes=args.window_minutes, overlap_seconds=args.overlap_seconds,
+            window_attempts=args.window_attempts,
         ))
     except KeyboardInterrupt:
         sys.exit(130)
