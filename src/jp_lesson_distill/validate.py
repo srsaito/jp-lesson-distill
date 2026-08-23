@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .audio import clip_audio, duration_seconds
 from .labeling import (
+    GRADED,
     Kit,
     build_items,
     find_script,
@@ -23,9 +24,14 @@ from .labeling import (
 from .models import Transcript, fmt_ts
 
 PROMPT = """
-  [t] Soso先生 (teacher)      [s] Steven (student)
-  [p] played recording        [?] cannot tell
-  [r] replay                  [b] back      [q] save and quit
+  [t] Soso先生                     [s] Steven
+  [p] textbook audio playing       [o] someone else in the room
+  [?] cannot tell
+  [r] replay      [b] back      [q] save and quit
+
+  Judge the VOICE, not the words. When the two of them act out a 会話, the voice is
+  still [t] or [s] even though the line belongs to 利用者 or 司書. When Soso先生 plays
+  the textbook recording, those actors are [p] — nobody in the room said it.
 """
 
 
@@ -96,11 +102,10 @@ def play(date: str, work_dir: Path) -> None:
     root = kit_path.parent
     queue = sorted(kit.items, key=lambda i: i.order)
     todo = [i for i in queue if not i.truth]
-    print(f"[label] {len(todo)} of {len(queue)} clips left. Judge by VOICE: in a roleplay, "
-          "label whoever is speaking, not the character.")
+    print(f"[label] {len(todo)} of {len(queue)} clips left.")
     print(PROMPT)
 
-    keys = {"t": "teacher", "s": "student", "p": "played", "?": "unsure"}
+    keys = {"t": "teacher", "s": "student", "p": "played", "o": "other", "?": "unsure"}
     pos = 0
     while 0 <= pos < len(todo):
         item = todo[pos]
@@ -123,7 +128,7 @@ def play(date: str, work_dir: Path) -> None:
                 kit.save(kit_path)  # after every answer: a session can die at any moment
                 pos += 1
                 break
-            print("    t / s / p / ? / r / b / q")
+            print("    t / s / p / o / ? / r / b / q")
     kit.save(kit_path)
     print(f"\n[label] done — {len(kit.labelled)}/{len(kit.items)} labelled in {kit_path}")
 
@@ -140,7 +145,7 @@ def report(date: str, work_dir: Path, against: Path | None) -> None:
     if not kit_path.exists():
         raise SystemExit(f"no kit at {kit_path}")
     kit = Kit.load(kit_path, date)
-    graded = [i for i in kit.items if i.truth in ("teacher", "student", "played")]
+    graded = [i for i in kit.items if i.truth in GRADED]
     unsure = [i for i in kit.items if i.truth == "unsure"]
     if not graded:
         raise SystemExit("nothing labelled yet — run `distill label --play`")
@@ -158,6 +163,12 @@ def report(date: str, work_dir: Path, against: Path | None) -> None:
             print(f"    {direction:24s} {n}")
         print("    (truth student -> labelled teacher is the expensive one: detect reads it "
               "as native speech and never flags the error)")
+    nonparticipant = [i for i in graded if i.truth in ("played", "other")]
+    if nonparticipant:
+        print(f"  {len(nonparticipant)} of {len(graded)} clips are not either participant "
+              f"({sum(1 for i in nonparticipant if i.truth == 'played')} textbook audio, "
+              f"{sum(1 for i in nonparticipant if i.truth == 'other')} someone else) — "
+              "Pass A cannot label these correctly at all, see jld-lg6")
 
     if against:
         repaired = {}

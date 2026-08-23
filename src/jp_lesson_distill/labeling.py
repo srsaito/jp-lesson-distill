@@ -14,9 +14,17 @@ Three rules the design exists to enforce:
    rate and says almost nothing about the cases a repair pass has to get right.
    Random, contested and scripted lines are sampled and scored separately.
 
-"Correct" means WHO PHYSICALLY SPOKE. A student reading the librarian's part in a
-roleplay is `student`; the textbook audio Soso先生 plays in class is `played`, which
-is nobody in the room (jld-lg6).
+"Correct" means WHO PHYSICALLY SPOKE, and four things can be speaking:
+
+- `teacher` / `student` — including when they act. A student reading the librarian's
+  part in a roleplay is `student`; the words belong to 利用者, the voice is Steven's.
+- `played` — the textbook audio. Soso先生 plays each 会話 in class, so the voices of
+  客/係員/利用者/司書 are actors on a recording, not anyone in the room (jld-lg6).
+- `other` — a live third voice: someone else in the room, a phone, another recording.
+
+`played` and `other` are always errors for Pass A, whose schema can only say teacher
+or student. Counting them is the point: it measures how much of the transcript is
+speech that no participant produced.
 """
 
 from __future__ import annotations
@@ -30,7 +38,8 @@ from pathlib import Path
 
 from .models import Segment, fmt_ts, parse_ts
 
-TRUTH_VALUES = ("teacher", "student", "played", "unsure")
+GRADED = ("teacher", "student", "played", "other")
+TRUTH_VALUES = (*GRADED, "unsure")
 
 # Address forms pin a speaker regardless of voice: only the teacher says 「スティーブンさん」
 # or 「奥さん」 (someone else's wife), only the student says 「先生」 as an address or
@@ -230,7 +239,7 @@ def score(items: list[Item], labels: dict[str, str] | None = None) -> tuple[list
     `labels` overrides the transcript's own label per item id — that is how a repaired
     transcript is scored against the same ground truth.
     """
-    graded = [i for i in items if i.truth in ("teacher", "student", "played")]
+    graded = [i for i in items if i.truth in GRADED]
     strata: dict[str, Score] = {}
     confusion: dict[str, int] = {}
     for item in graded:
@@ -254,7 +263,7 @@ def mcnemar(items: list[Item], before: dict[str, str], after: dict[str, str]) ->
     """
     fixed = broken = 0
     for item in items:
-        if item.truth not in ("teacher", "student", "played"):
+        if item.truth not in GRADED:
             continue
         was = before.get(item.id, item.speaker) == item.truth
         now = after.get(item.id, item.speaker) == item.truth

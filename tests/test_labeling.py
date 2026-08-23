@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from jp_lesson_distill.labeling import (
+    GRADED,
+    TRUTH_VALUES,
     Item,
     build_items,
     marker_conflict,
@@ -166,6 +168,16 @@ def test_accuracy_is_reported_per_stratum_and_overall():
     assert confusion == {"student -> teacher": 1}
 
 
+def test_textbook_audio_and_third_voices_are_graded_and_always_wrong_for_pass_a():
+    """Pass A can only say teacher or student, so a played line is an error either way."""
+    items = [_item("a", "scripted", "teacher", "played"),
+             _item("b", "random", "student", "other"),
+             _item("c", "random", "teacher", "teacher")]
+    scores, confusion = score(items)
+    assert {s.stratum: s.n for s in scores}["ALL"] == 3
+    assert confusion == {"played -> teacher": 1, "other -> student": 1}
+
+
 def test_unsure_and_unlabelled_clips_are_excluded_not_counted_wrong():
     items = [_item("a", "random", "teacher", "teacher"),
              _item("b", "random", "teacher", "unsure"),
@@ -196,6 +208,18 @@ def test_mcnemar_calls_an_even_split_insignificant():
 def test_mcnemar_on_a_repair_that_changed_nothing():
     items = [_item("a", "random", "teacher", "teacher")]
     assert mcnemar(items, {}, {}) == (0, 0, 1.0)
+
+
+def test_every_gradeable_value_is_offered_to_the_listener_and_unsure_is_not_graded():
+    assert set(TRUTH_VALUES) - set(GRADED) == {"unsure"}
+    assert set(GRADED) == {"teacher", "student", "played", "other"}
+
+
+def test_a_repair_that_turns_a_wrong_label_into_another_wrong_label_is_not_a_fix():
+    """played stays wrong whether Pass A guessed teacher or student."""
+    items = [_item("a", "scripted", "teacher", "played")]
+    fixed, broken, _ = mcnemar(items, {}, {"a": "student"})
+    assert (fixed, broken) == (0, 0)
 
 
 def test_similarity_survives_punctuation_and_orthography_differences():
