@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from .pipeline import Config, run
-from .validate import build, dump, play, report
+from .validate import build, dump, play, report, reset
 
 
 def main() -> None:
@@ -47,6 +47,9 @@ def main() -> None:
                      help="dialogue script to match against (default: Z_kaiwa_scripts_*.md beside "
                           "the recording); any markdown table or plain lines will do")
     lab.add_argument("--seed", type=int, default=0, help="sampling seed (same seed = same kit)")
+    lab.add_argument("--reset", action="store_true",
+                     help="clear every answer and relabel from scratch (the old answers are "
+                          "backed up next to the kit)")
     lab.add_argument("--play", action="store_true",
                      help="start listening straight away (resumable; also `distill label --play` alone)")
 
@@ -68,7 +71,9 @@ def main() -> None:
         if args.command == "label":
             if args.recording is not None and not args.recording.exists():
                 parser.error(f"recording not found: {args.recording}")
-            if args.recording is not None or not args.play:
+            if args.reset:
+                reset(args.date, args.work_dir)
+            elif args.recording is not None or not args.play:
                 build(args.recording, args.date, args.work_dir, args.compare,
                       args.n_random, args.n_contested, args.n_scripted, args.seed,
                       script_path=args.script)

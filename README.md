@@ -46,6 +46,9 @@ uv run distill label ~/OneDrive/…/lesson.m4a --date 20260817 --compare other-r
 # listen and label — resumable, saves after every keystroke, no network
 uv run distill label --date 20260817 --play
 
+# start the answers over (the old ones are backed up beside the kit)
+uv run distill label --date 20260817 --reset --play
+
 # accuracy per stratum, plus a paired McNemar comparison against a repaired transcript
 uv run distill score --date 20260817 [--against repaired.json]
 ```

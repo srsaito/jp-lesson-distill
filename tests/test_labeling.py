@@ -235,3 +235,40 @@ def test_similarity_survives_punctuation_and_orthography_differences():
     assert similarity("あ、すみません。図書館内は飲食禁止でお願いします。",
                       "あ、すみません、図書館内は飲食禁止でお願いします") > 0.9
     assert similarity("全然違う文です", "図書館内は飲食禁止です") < 0.5
+
+
+# --- reset ---
+
+def test_reset_clears_every_answer_and_keeps_a_backup(tmp_path):
+    from jp_lesson_distill.labeling import Kit
+    from jp_lesson_distill.validate import reset
+
+    kit_dir = tmp_path / "20260817" / "labeling"
+    kit_dir.mkdir(parents=True)
+    items = build_items(lesson(), n_random=3, n_contested=0, n_scripted=0, seed=1)
+    items[0].truth = "teacher"
+    items[1].truth = "student"
+    Kit(date="20260817", items=items).save(kit_dir / "items.jsonl")
+
+    reset("20260817", tmp_path)
+
+    after = Kit.load(kit_dir / "items.jsonl", "20260817")
+    assert all(i.truth is None for i in after.items)
+    assert len(after.items) == 3, "resetting must not drop the sample itself"
+    backup = Kit.load(kit_dir / "items.bak1.jsonl", "20260817")
+    assert [i.truth for i in backup.items] == ["teacher", "student", None]
+
+
+def test_reset_does_not_pile_up_backups_over_the_same_name(tmp_path):
+    from jp_lesson_distill.labeling import Kit
+    from jp_lesson_distill.validate import reset
+
+    kit_dir = tmp_path / "20260817" / "labeling"
+    kit_dir.mkdir(parents=True)
+    for round_ in ("teacher", "student"):
+        items = build_items(lesson(), n_random=2, n_contested=0, n_scripted=0, seed=1)
+        items[0].truth = round_
+        Kit(date="20260817", items=items).save(kit_dir / "items.jsonl")
+        reset("20260817", tmp_path)
+    assert (kit_dir / "items.bak1.jsonl").exists()
+    assert (kit_dir / "items.bak2.jsonl").exists()

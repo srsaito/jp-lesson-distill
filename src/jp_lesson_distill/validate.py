@@ -97,6 +97,31 @@ def build(recording: Path, date: str, work_dir: Path, compare: Path | None,
     return kit_path
 
 
+def reset(date: str, work_dir: Path) -> None:
+    """Clear every answer so the kit can be relabelled from scratch.
+
+    The old answers are backed up rather than dropped: a reset usually happens because
+    the options changed, and what someone chose when the right option was missing is
+    worth being able to look at.
+    """
+    kit_path = work_dir / date / "labeling" / "items.jsonl"
+    if not kit_path.exists():
+        raise SystemExit(f"no kit at {kit_path}")
+    kit = Kit.load(kit_path, date)
+    answered = kit.labelled
+    if not answered:
+        print("[label] nothing to reset — no answers recorded yet")
+        return
+    n = 1
+    while (backup := kit_path.with_suffix(f".bak{n}.jsonl")).exists():
+        n += 1
+    backup.write_text(kit_path.read_text())
+    for item in kit.items:
+        item.truth = None
+    kit.save(kit_path)
+    print(f"[label] cleared {len(answered)} answer(s); the previous file is {backup.name}")
+
+
 def play(date: str, work_dir: Path) -> None:
     """Listen and label. The model's guess is never shown until scoring."""
     kit_path = work_dir / date / "labeling" / "items.jsonl"
