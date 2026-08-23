@@ -54,6 +54,8 @@ The listener never sees the model's guess, clips are shuffled out of time order 
 
 Four things can be speaking, and the answer is always *whose voice it is*: `teacher` and `student` (including when they act out a 会話 — the words belong to 利用者 or 司書, the voice does not), `played` for the textbook audio Soso先生 plays in class, and `other` for a live third voice. The last two are always errors for Pass A, whose schema has only two values — counting them measures how much of the transcript is speech no participant produced.
 
+Clips open two seconds before the line so the change of voice is audible, so most clips contain more than one voice; that is not ambiguity, and the answer is whoever speaks the text on screen. `mixed` is reserved for when the *text itself* runs two turns together — a segmentation defect rather than a diarization one, excluded from the accuracy figure and reported separately, since excluding it flatters Pass A.
+
 ## Verification
 
 `scripts/make_test_lesson.sh` synthesizes a mini-lesson with macOS `say` (Kyoko/Samantha voices) containing a planted student error (「学校で行きます」, particle mistake), so the full pipeline can be smoke-tested end-to-end without a real recording:

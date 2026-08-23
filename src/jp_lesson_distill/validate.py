@@ -26,12 +26,16 @@ from .models import Transcript, fmt_ts
 PROMPT = """
   [t] Soso先生                     [s] Steven
   [p] textbook audio playing       [o] someone else in the room
-  [?] cannot tell
+  [m] the TEXT spans two voices    [?] cannot make the voice out
   [r] replay      [b] back      [q] save and quit
 
   Judge the VOICE, not the words. When the two of them act out a 会話, the voice is
   still [t] or [s] even though the line belongs to 利用者 or 司書. When Soso先生 plays
   the textbook recording, those actors are [p] — nobody in the room said it.
+
+  Every clip opens ~2 s early, so hearing a second voice is normal — label whoever
+  speaks the text shown. Use [m] only when the TEXT ON SCREEN is itself two turns run
+  together; then no single label can be right and the defect is the segmentation.
 """
 
 
@@ -105,7 +109,8 @@ def play(date: str, work_dir: Path) -> None:
     print(f"[label] {len(todo)} of {len(queue)} clips left.")
     print(PROMPT)
 
-    keys = {"t": "teacher", "s": "student", "p": "played", "o": "other", "?": "unsure"}
+    keys = {"t": "teacher", "s": "student", "p": "played", "o": "other",
+            "m": "mixed", "?": "unsure"}
     pos = 0
     while 0 <= pos < len(todo):
         item = todo[pos]
@@ -128,7 +133,7 @@ def play(date: str, work_dir: Path) -> None:
                 kit.save(kit_path)  # after every answer: a session can die at any moment
                 pos += 1
                 break
-            print("    t / s / p / o / ? / r / b / q")
+            print("    t / s / p / o / m / ? / r / b / q")
     kit.save(kit_path)
     print(f"\n[label] done — {len(kit.labelled)}/{len(kit.items)} labelled in {kit_path}")
 
@@ -147,11 +152,19 @@ def report(date: str, work_dir: Path, against: Path | None) -> None:
     kit = Kit.load(kit_path, date)
     graded = [i for i in kit.items if i.truth in GRADED]
     unsure = [i for i in kit.items if i.truth == "unsure"]
+    mixed = [i for i in kit.items if i.truth == "mixed"]
     if not graded:
         raise SystemExit("nothing labelled yet — run `distill label --play`")
 
     print(f"\nground truth: {len(graded)} clips labelled"
-          + (f", {len(unsure)} marked unclear (excluded)" if unsure else ""))
+          + (f", {len(unsure)} unclear" if unsure else "")
+          + (f", {len(mixed)} with text spanning two voices" if mixed else "")
+          + (" (excluded)" if unsure or mixed else ""))
+    if mixed:
+        print(f"  those {len(mixed)} are a SEGMENTATION defect, not a diarization one: "
+              "Pass A ran two turns into one segment, so no speaker label could be right. "
+              "Excluding them flatters the accuracy below — read it with that in mind, and "
+              "see the under-split warning in quality.py.")
 
     scores, confusion = score(kit.items)
     print("\nPass A accuracy against what you heard:")

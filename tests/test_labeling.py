@@ -186,6 +186,15 @@ def test_unsure_and_unlabelled_clips_are_excluded_not_counted_wrong():
     assert {s.stratum: s.n for s in scores}["ALL"] == 1
 
 
+def test_a_segment_whose_text_spans_two_voices_is_excluded_not_guessed_at():
+    """No speaker label can be right for a merged turn — that is a segmentation defect."""
+    items = [_item("a", "random", "teacher", "mixed"),
+             _item("b", "random", "teacher", "teacher")]
+    scores, confusion = score(items)
+    assert {s.stratum: s.n for s in scores}["ALL"] == 1
+    assert confusion == {}
+
+
 def test_mcnemar_ignores_agreements_and_counts_only_the_flips():
     items = [_item(str(i), "contested", "teacher", "student") for i in range(10)]
     items += [_item(f"ok{i}", "random", "teacher", "teacher") for i in range(50)]
@@ -210,8 +219,8 @@ def test_mcnemar_on_a_repair_that_changed_nothing():
     assert mcnemar(items, {}, {}) == (0, 0, 1.0)
 
 
-def test_every_gradeable_value_is_offered_to_the_listener_and_unsure_is_not_graded():
-    assert set(TRUTH_VALUES) - set(GRADED) == {"unsure"}
+def test_every_gradeable_value_is_offered_to_the_listener_and_the_rest_are_not_graded():
+    assert set(TRUTH_VALUES) - set(GRADED) == {"unsure", "mixed"}
     assert set(GRADED) == {"teacher", "student", "played", "other"}
 
 

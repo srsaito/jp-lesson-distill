@@ -22,6 +22,11 @@ Three rules the design exists to enforce:
   客/係員/利用者/司書 are actors on a recording, not anyone in the room (jld-lg6).
 - `other` — a live third voice: someone else in the room, a phone, another recording.
 
+A clip normally contains more than one voice — it opens two seconds before the line
+so the change of voice is audible. That is not ambiguity: label whoever speaks the
+text on screen. Ambiguity is when the TEXT ITSELF spans two voices, because Pass A
+merged two turns into one segment; that is `mixed`, and no speaker label can be right.
+
 `played` and `other` are always errors for Pass A, whose schema can only say teacher
 or student. Counting them is the point: it measures how much of the transcript is
 speech that no participant produced.
@@ -39,7 +44,12 @@ from pathlib import Path
 from .models import Segment, fmt_ts, parse_ts
 
 GRADED = ("teacher", "student", "played", "other")
-TRUTH_VALUES = (*GRADED, "unsure")
+# Not graded, and not the same thing as each other: `unsure` is "I could not make the
+# voice out", `mixed` is "the text on screen spans more than one voice, so no single
+# label can be right". The second is a SEGMENTATION defect, not a diarization one —
+# excluded from accuracy but counted, because excluding it quietly flatters Pass A.
+UNGRADED = ("unsure", "mixed")
+TRUTH_VALUES = (*GRADED, *UNGRADED)
 
 # Address forms pin a speaker regardless of voice: only the teacher says 「スティーブンさん」
 # or 「奥さん」 (someone else's wife), only the student says 「先生」 as an address or
