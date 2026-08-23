@@ -44,12 +44,15 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 | `prompts.py` | the three stage prompts | the product is the *student's errors* — every prompt says "do not fix" |
 | `models.py` | Pydantic schemas (= Gemini `response_schema`) + `moments.json` contract | changing `Moment`/`MomentsFile` means an ADR (ADR-0003) |
 | `quality.py` | per-window sanity gates on Pass A output | thresholds are calibrated against real transcripts, never guessed; re-check them if you change them |
+| `labeling.py` | sampling, blinding and scoring for diarization ground truth | pure functions; the listener must never see the model's label |
+| `validate.py` | `distill label` / `distill score` — cut clips, listen, score | offline once the clips exist; answers are saved after every keystroke |
 
 ### Dev loop
 - `uv sync` once; `uv run distill run <rec> --date YYYYMMDD` to run. `--skip-pass-b` is the cheap dry run; `--work-dir` isolates experiments.
 - **Smoke test without a real lesson:** `scripts/make_test_lesson.sh` synthesizes a ~1-min lesson with planted errors under `work/test/` (macOS `say`). Run it before touching prompts or schemas.
 - **Offline fixtures** (gitignored, local only): `work/ref-windowed/w{1,2,3}/<date>/transcript.json` are known-good windowed transcripts (`offset.txt` = seconds to add to reach absolute time); `work/20260729/pass_a_partial.attempt1.json` is a real repetition-loop sample. Unit-test parsing, merging, de-dup, loop detection and sanity gates against these — **never against the live API**.
 - Tests: `uv run pytest` (`tests/`, pytest is in the `dev` dependency group). Anything that calls Gemini is an integration test and must be opt-in (env flag), not part of the default run.
+- **Diarization ground truth:** `distill label <recording> --date YYYYMMDD --compare <other transcript.json>` cuts a blind, shuffled, stratified set of clips under `work/<date>/labeling/`; `distill label --date … --play` is the listening session (resumable); `distill score --date …` reports accuracy per stratum, and `--against <repaired.json>` adds a paired McNemar comparison. Judge by VOICE — in a roleplay the label is whoever is speaking, not the character; played textbook audio is `played` (jld-lg6). Don't read `items.jsonl` while labelling: it carries the model's guess.
 - Quality gates before closing an issue: smoke test passes; unit tests pass; one real-lesson run if the change touches Pass A.
 
 ### Gemini rules (learned the expensive way — see GH #1/#2, epic `jld-hc9`)

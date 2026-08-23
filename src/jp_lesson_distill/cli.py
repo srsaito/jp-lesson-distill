@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .pipeline import Config, run
+from .validate import build, dump, play, report
 
 
 def main() -> None:
@@ -30,13 +31,53 @@ def main() -> None:
                    help="how many times to transcribe a window that fails the sanity gates "
                         "(1 = never retry; the least-bad attempt is kept either way)")
 
+    # distill label — build a blind listening kit for diarization ground truth (jld-dli)
+    lab = sub.add_parser("label", help="sample lines and cut blind clips to label by ear")
+    lab.add_argument("recording", type=Path, nargs="?",
+                     help="the recording, used only to find Z_kaiwa_scripts_*.md beside it")
+    lab.add_argument("--date", required=True, help="lesson date, YYYYMMDD")
+    lab.add_argument("--work-dir", type=Path, default=Path("work"))
+    lab.add_argument("--compare", type=Path,
+                     help="another run's transcript.json; lines the two disagree on become "
+                          "the contested stratum")
+    lab.add_argument("--random", type=int, default=20, dest="n_random")
+    lab.add_argument("--contested", type=int, default=20, dest="n_contested")
+    lab.add_argument("--scripted", type=int, default=10, dest="n_scripted")
+    lab.add_argument("--script", type=Path,
+                     help="dialogue script to match against (default: Z_kaiwa_scripts_*.md beside "
+                          "the recording); any markdown table or plain lines will do")
+    lab.add_argument("--seed", type=int, default=0, help="sampling seed (same seed = same kit)")
+    lab.add_argument("--play", action="store_true",
+                     help="start listening straight away (resumable; also `distill label --play` alone)")
+
+    sc = sub.add_parser("score", help="score Pass A against the labels you recorded")
+    sc.add_argument("--date", required=True, help="lesson date, YYYYMMDD")
+    sc.add_argument("--work-dir", type=Path, default=Path("work"))
+    sc.add_argument("--against", type=Path,
+                    help="a repaired transcript.json to compare against Pass A, paired (McNemar)")
+    sc.add_argument("--dump", action="store_true", help="print the labelled truth as JSON")
+
     args = parser.parse_args()
     if not re.fullmatch(r"\d{8}", args.date):
         parser.error("--date must be YYYYMMDD")
-    if not args.recording.exists():
-        parser.error(f"recording not found: {args.recording}")
 
     try:
+        if args.command == "score":
+            dump(args.date, args.work_dir) if args.dump else report(args.date, args.work_dir, args.against)
+            return
+        if args.command == "label":
+            if args.recording is not None and not args.recording.exists():
+                parser.error(f"recording not found: {args.recording}")
+            if args.recording is not None or not args.play:
+                build(args.recording, args.date, args.work_dir, args.compare,
+                      args.n_random, args.n_contested, args.n_scripted, args.seed,
+                      script_path=args.script)
+            if args.play:
+                play(args.date, args.work_dir)
+            return
+
+        if not args.recording.exists():
+            parser.error(f"recording not found: {args.recording}")
         run(Config(
             recording=args.recording, date=args.date, model=args.model,
             work_dir=args.work_dir, out_dir=args.out_dir,

@@ -35,6 +35,23 @@ Pass A never sends the whole hour in one call — it cuts the audio into ~20-min
 
 Output lands in the General vault `_raw/` as `YYYYMMDD-moments.json` + `YYYYMMDD-transcript.md`, then `/distill-jp-lesson` (a General-vault Claude skill) fuses them with the lesson note and generates Anki cards via FlashGen.
 
+## Diarization ground truth
+
+`teacher`/`student` labels come out of Pass A unverified, and two runs of one lesson agree only 71% of the time — so there is a small offline loop for measuring them against your own ears:
+
+```bash
+# cut a blind, shuffled, stratified set of clips (random / contested / scripted)
+uv run distill label ~/OneDrive/…/lesson.m4a --date 20260817 --compare other-run/transcript.json
+
+# listen and label — resumable, saves after every keystroke, no network
+uv run distill label --date 20260817 --play
+
+# accuracy per stratum, plus a paired McNemar comparison against a repaired transcript
+uv run distill score --date 20260817 [--against repaired.json]
+```
+
+The listener never sees the model's guess, clips are shuffled out of time order (a lesson alternates speakers, and in time order you infer rather than hear), and contested lines are sampled separately from random ones because they are rare and are exactly what a repair pass has to get right.
+
 ## Verification
 
 `scripts/make_test_lesson.sh` synthesizes a mini-lesson with macOS `say` (Kyoko/Samantha voices) containing a planted student error (「学校で行きます」, particle mistake), so the full pipeline can be smoke-tested end-to-end without a real recording:
