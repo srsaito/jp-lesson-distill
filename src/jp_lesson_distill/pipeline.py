@@ -22,7 +22,7 @@ from .models import (
     fmt_ts,
     parse_ts,
 )
-from .quality import WindowReport, evaluate
+from .quality import WindowReport, evaluate, marker_verdict
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
 
@@ -187,6 +187,10 @@ def _pass_a(cfg: Config, work: Path, audio: Path, total: float, get_client) -> T
     last = parse_ts(transcript.segments[-1].start) if transcript.segments else 0.0
     print(f"[pass_a] {len(transcript.segments)} segments, "
           f"last at {fmt_ts(last)} of {fmt_ts(total)}")
+    # Diarization verdict over the merged hour (jld-86b). The per-window gates ask
+    # whether speech went missing; this asks whether it landed on the right person,
+    # and it only has a usable denominator once the windows are back together.
+    print(f"[pass_a] {marker_verdict(transcript.segments)}")
     return transcript
 
 

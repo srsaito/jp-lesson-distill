@@ -10,6 +10,11 @@ Thresholds are calibrated against every transcript on disk (see jld-hc9.4);
 what separates good from degraded is coverage, dead time and span — NOT
 segments-per-minute, which puts the known-bad run (7.0/min) inside the range of
 the known-good ones (4.6-9.6/min). Density is reported, never gated.
+
+These gates all ask "is any speech missing?". Address-form agreement (jld-86b)
+asks the different question "is the speech attributed to the right person?" —
+the one thing here that would have caught the 2026-08-17 hand-staged run, which
+passes every gate above and still gets a third of its speakers wrong.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
+from .labeling import MARKERS, marker_conflict
 from .models import Segment, fmt_ts, parse_ts
 
 # --- calibrated thresholds ---
@@ -29,6 +35,23 @@ SPAN_FAIL = 180.0           # s: no single segment should have to cover this muc
 SPAN_WARN = 60.0            # s: the prompt asks for turns split at ~30 s
 DENSITY_FLOOR = 3.0         # segments per audio-minute; a floor, not a quality bar
 DUP_MIN_CHARS = 20          # ignore short interjections when looking for repeats
+
+# Address forms pin a speaker regardless of voice (jld-86b). This warns and never
+# fails: a retry cannot fix diarization, so a failure here would only burn attempts.
+#
+# The cue is SPARSE — roughly nine lines an hour, so about three per 20-minute window,
+# and a drill-heavy window can have none. That is why MARKER_MIN_N exists. At a
+# denominator of 3 the only silent outcome is 3/3, so every window with a single
+# disagreement would warn; on the real transcripts that fires on hand-staged w2 at
+# 2/3, which is close to no evidence at all. Four is the smallest denominator where
+# the check can distinguish "one odd line" from "this window is wrong": it keeps the
+# good run's 3/4 window quiet and still catches the bad run's 1/5.
+#
+# The figure that actually carries weight is the WHOLE-RUN one (marker_agreement over
+# the merged transcript), where the hour aggregates: 8/9 for the good 2026-08-17 run
+# against 3/8 for the hand-staged one.
+MARKER_WARN = 0.7           # agreement below this is worth cutting a listening kit
+MARKER_MIN_N = 4            # fewer marker lines than this says nothing either way
 
 
 @dataclass
@@ -52,7 +75,14 @@ class WindowReport:
     max_span: float         # longest stretch of audio one segment must cover
     dead_time: float        # seconds of audio inside spans that carry almost no text
     duplicates: int
+    marker_agree: int = 0   # segments whose label matches the address form they contain
+    marker_total: int = 0   # segments containing an address form at all
     checks: list[Check] = field(default_factory=list)
+
+    @property
+    def marker_rate(self) -> float | None:
+        """None when the window has no address forms — not zero, which reads as failure."""
+        return self.marker_agree / self.marker_total if self.marker_total else None
 
     @property
     def failures(self) -> list[Check]:
@@ -68,9 +98,13 @@ class WindowReport:
 
     def summary(self) -> str:
         """One line, always printed, so degradation is visible in the run log."""
+        # The address-form count is always shown with its denominator: "6/7" is a
+        # reading, "86%" out of seven is a story about one line.
+        cue = (f", address forms {self.marker_agree}/{self.marker_total}"
+               if self.marker_total else ", no address forms")
         return (f"{self.segments} segments, {self.density:.1f}/min, "
                 f"coverage {self.coverage:.0%}, longest span {self.max_span:.0f}s, "
-                f"dead {self.dead_time:.0f}s")
+                f"dead {self.dead_time:.0f}s{cue}")
 
 
 def _spans(segments: list[Segment], duration: float) -> list[tuple[float, Segment]]:
@@ -97,6 +131,7 @@ def evaluate(segments: list[Segment], duration: float) -> WindowReport:
     worst_span, worst_seg = max(spans, key=lambda pair: pair[0])
     texts = Counter(s.text for s in segments if len(s.text) > DUP_MIN_CHARS)
     dupes = sum(n - 1 for n in texts.values() if n > 1)
+    agree, n_cued = marker_agreement(segments)
 
     report = WindowReport(
         segments=len(segments),
@@ -106,6 +141,8 @@ def evaluate(segments: list[Segment], duration: float) -> WindowReport:
         max_span=worst_span,
         dead_time=dead,
         duplicates=dupes,
+        marker_agree=agree,
+        marker_total=n_cued,
     )
 
     slack = max(COVERAGE_SLACK, COVERAGE_SLACK_FRAC * duration)
@@ -156,8 +193,60 @@ def evaluate(segments: list[Segment], duration: float) -> WindowReport:
             "a replayed block is not; check coverage and dead-time before believing it",
             fatal=False,
         ),
+        Check(
+            "address-forms",
+            # Silent unless there are enough cues to mean anything. Every other gate
+            # here asks whether speech went missing; this one asks whether it landed
+            # on the right person, and nothing else in the pipeline does.
+            n_cued < MARKER_MIN_N or agree / n_cued >= MARKER_WARN,
+            f"only {agree}/{n_cued} segments containing 「スティーブンさん」「奥さん」"
+            f"「先生」「妻」 are labelled the way the address form requires — diarization "
+            "may be wrong well beyond these lines; cut a listening kit with `distill label`",
+            fatal=False,
+        ),
     ]
     return report
+
+
+def _has_marker(segment: Segment) -> bool:
+    """Whether the line contains an address form at all — conflict or not.
+
+    marker_conflict() returns None both for 'agrees' and for 'no cue present', so the
+    denominator has to be counted separately. MARKERS comes from labeling rather than
+    being restated here: the gate and the ground-truth kit must never drift apart.
+    """
+    return any(marker in segment.text for marker, _ in MARKERS)
+
+
+def marker_agreement(segments: list[Segment]) -> tuple[int, int]:
+    """(agreeing, total) segments carrying an address form.
+
+    Over a whole lesson this is the figure worth reading — an hour supplies roughly
+    nine cues, enough to tell 8/9 from 3/8, where any single 20-minute window supplies
+    about three and can only tell you that something might be off.
+    """
+    cued = [s for s in segments if _has_marker(s)]
+    return sum(1 for s in cued if marker_conflict(s) is None), len(cued)
+
+
+def marker_verdict(segments: list[Segment]) -> str:
+    """One line about the whole run's diarization, for the end of Pass A.
+
+    Deliberately never alarming on thin evidence: with no cues, or too few, it says so
+    rather than implying a clean bill of health it cannot give.
+    """
+    agree, total = marker_agreement(segments)
+    if not total:
+        return ("no 「スティーブンさん」「奥さん」「先生」「妻」 lines in this lesson, so "
+                "diarization is unverified — normal for a drill-heavy hour")
+    head = f"address forms {agree}/{total}"
+    if total < MARKER_MIN_N:
+        return f"{head} — too few cues to judge diarization either way"
+    if agree / total < MARKER_WARN:
+        return (f"{head} — diarization looks unreliable, and the damage is not limited "
+                f"to these {total} lines. Cut a listening kit: `distill label <recording> "
+                "--date <date>` then `--play`, and `distill score` to measure it")
+    return f"{head} — diarization consistent with the address forms"
 
 
 def _first_drop(starts: list[float]) -> float:
