@@ -1,0 +1,295 @@
+{
+  "_": "Hand-labelled diarization ground truth for the 2026-08-17 lesson (jld-dli). One entry per sampled Pass A segment, keyed by its start time in the transcript at work/hc9-2-verify/20260817/transcript.json. `pass_a` is the windowed run's label, `reference` the hand-staged run's label where the two disagreed, `truth` is what Steven heard. Utterance text is deliberately omitted: this repo is public and lesson content belongs in OneDrive and the vault, not here. The full kit with text stays in work/hc9-2-verify/20260817/labeling/items.jsonl.",
+  "date": "20260817",
+  "labelled_by": "Steven Saito",
+  "labelled_on": "2026-08-25",
+  "items": [
+    {
+      "t_start": 251.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "student"
+    },
+    {
+      "t_start": 337.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "student"
+    },
+    {
+      "t_start": 435.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 466.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 575.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "teacher"
+    },
+    {
+      "t_start": 646.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "student"
+    },
+    {
+      "t_start": 767.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "teacher"
+    },
+    {
+      "t_start": 779.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "student"
+    },
+    {
+      "t_start": 842.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "student"
+    },
+    {
+      "t_start": 855.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "student"
+    },
+    {
+      "t_start": 858.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "teacher"
+    },
+    {
+      "t_start": 898.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 1035.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "student"
+    },
+    {
+      "t_start": 1053.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "teacher"
+    },
+    {
+      "t_start": 1097.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 1120.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "student"
+    },
+    {
+      "t_start": 1260.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 1335.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "student"
+    },
+    {
+      "t_start": 1367.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 1375.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "student"
+    },
+    {
+      "t_start": 1470.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 1747.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "student"
+    },
+    {
+      "t_start": 1854.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "mixed"
+    },
+    {
+      "t_start": 1884.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "played"
+    },
+    {
+      "t_start": 1986.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "played"
+    },
+    {
+      "t_start": 2015.0,
+      "stratum": "scripted",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "played"
+    },
+    {
+      "t_start": 2070.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 2258.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 2260.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 2294.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "student"
+    },
+    {
+      "t_start": 2321.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "student"
+    },
+    {
+      "t_start": 2620.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    },
+    {
+      "t_start": 2873.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "teacher"
+    },
+    {
+      "t_start": 3020.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "teacher"
+    },
+    {
+      "t_start": 3061.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "mixed"
+    },
+    {
+      "t_start": 3072.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "student"
+    },
+    {
+      "t_start": 3080.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "mixed"
+    },
+    {
+      "t_start": 3102.0,
+      "stratum": "random",
+      "pass_a": "student",
+      "reference": null,
+      "truth": "mixed"
+    },
+    {
+      "t_start": 3163.0,
+      "stratum": "contested",
+      "pass_a": "student",
+      "reference": "teacher",
+      "truth": "mixed"
+    },
+    {
+      "t_start": 3178.0,
+      "stratum": "contested",
+      "pass_a": "teacher",
+      "reference": "student",
+      "truth": "teacher"
+    },
+    {
+      "t_start": 3256.0,
+      "stratum": "random",
+      "pass_a": "teacher",
+      "reference": null,
+      "truth": "teacher"
+    }
+  ]
+}
