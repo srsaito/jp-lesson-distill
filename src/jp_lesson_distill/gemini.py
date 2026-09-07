@@ -43,6 +43,32 @@ LOOP_TAIL_CHARS = 2000   # how much of the accumulated response to keep under in
 LOOP_UNIT_MAX = 64       # longest cycle we are willing to call a loop
 LOOP_MIN_REPEATS = 20    # consecutive repeats before we believe it
 
+# --- how long a silent stream is allowed to stay silent (jld-hc9.3.2) ---
+#
+# A call that never sends a first chunk used to wait THIRTY MINUTES, and that was
+# configuration, not a missing watchdog. The SDK turns HttpOptions(timeout=<ms>) into a
+# single per-request scalar, httpx expands a scalar to all four of its fields, and httpx's
+# read timeout is the maximum GAP BETWEEN CHUNKS rather than a budget for the whole
+# response. So the old 30*60*1000 was, precisely, "tolerate half an hour of silence".
+# Lowering the scalar is the entire fix: a long healthy stream is unaffected because the
+# gap resets on every chunk, and httpx.ReadTimeout is already in TRANSIENT, so _with_retry
+# re-rolls the call for free.
+#
+# Do NOT try per-field httpx timeouts through client_args. get_timeout_in_seconds returns
+# None when http_options.timeout is unset and the SDK then passes timeout=None explicitly,
+# which in httpx means "disable all timeouts" rather than "use the client default" — so
+# per-field values set on the client are overridden to nothing. Verified against the
+# installed SDK.
+#
+# PROVISIONAL VALUE. Nobody has yet measured how long a healthy audio+response_schema call
+# can legitimately go before its first chunk, and thinking tokens are not answer text, so a
+# window that thinks for a while looks identical to a stalled one from out here. Aborting
+# too eagerly costs a whole re-transcription, so this starts deliberately generous — six
+# times better than the old behaviour without pretending to a number we have not measured.
+# Every call now logs first-byte latency and longest gap; jld-hc9.3.3 tightens this once
+# a real lesson has supplied the distribution.
+STREAM_IDLE_TIMEOUT_S = 300.0
+
 
 class RepetitionLoop(RuntimeError):
     """The model started cycling on one fragment; the rest of this call is garbage."""
@@ -82,7 +108,7 @@ def _dotenv_key() -> str | None:
     return None
 
 
-def make_client() -> genai.Client:
+def make_client(idle_timeout_s: float = STREAM_IDLE_TIMEOUT_S) -> genai.Client:
     key = _dotenv_key()
     if key:
         print("[gemini] using GEMINI_API_KEY from .env (overrides shell env)")
@@ -90,8 +116,12 @@ def make_client() -> genai.Client:
         key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise SystemExit("GEMINI_API_KEY is not set (shell env or .env in the repo)")
+    print(f"[gemini] aborting any stream that goes quiet for {idle_timeout_s:.0f}s")
     # explicit api_key so a stray GOOGLE_API_KEY in the shell can never win
-    return genai.Client(api_key=key, http_options=types.HttpOptions(timeout=30 * 60 * 1000))
+    return genai.Client(
+        api_key=key,
+        http_options=types.HttpOptions(timeout=int(idle_timeout_s * 1000)),
+    )
 
 
 def upload_audio(client: genai.Client, path: Path) -> types.File:
@@ -112,6 +142,7 @@ def audio_part(path: Path) -> types.Part:
 def generate(client: genai.Client, model: str, contents: list, schema: type,
              temperature: float = 0.2, progress: bool = False):
     def attempt():
+        started = time.monotonic()
         stream = client.models.generate_content_stream(
             model=model,
             contents=contents,
@@ -123,8 +154,18 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
         )
         pieces: list[str] = []
         tail = ""  # rolling window, so the check stays O(1) per chunk
+        # The gaps are the measurement jld-hc9.3.3 needs: the read timeout has to sit
+        # above the largest one a HEALTHY call produces, and the first is the long one.
+        first_byte: float | None = None
+        longest_gap = 0.0
+        previous = started
         for i, chunk in enumerate(stream):
+            now = time.monotonic()
+            longest_gap = max(longest_gap, now - previous)
+            previous = now
             if chunk.text:
+                if first_byte is None:
+                    first_byte = now - started
                 pieces.append(chunk.text)
                 tail = (tail + chunk.text)[-LOOP_TAIL_CHARS:]
                 unit = find_repetition_loop(tail)
@@ -140,6 +181,9 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
                 print(".", end="", flush=True)
         if progress:
             print(flush=True)
+            text = "".join(pieces)
+            print(f"[gemini] stream: {len(text):,} chars in {time.monotonic() - started:.0f}s "
+                  f"(first byte {first_byte or 0:.1f}s, longest gap {longest_gap:.1f}s)")
         return "".join(pieces)
 
     text = _with_retry(attempt, "generate")
@@ -152,6 +196,14 @@ def _with_retry(fn, what: str, attempts: int = 4):
     for n in range(1, attempts + 1):
         try:
             return fn()
+        except httpx.ReadTimeout:
+            # Not a network blip: the stream went quiet for longer than the client allows,
+            # which is the stall this timeout exists to cut short.
+            if n == attempts:
+                raise
+            print(f"[{what}] the stream went quiet for longer than the client allows and was "
+                  f"aborted, retry {n}/{attempts - 1}…")
+            time.sleep(5 * n)
         except TRANSIENT as e:
             if n == attempts:
                 raise

@@ -10,7 +10,14 @@ from pathlib import Path
 
 from . import prompts
 from .audio import clip_audio, duration_seconds, prep_audio, split_windows
-from .gemini import RepetitionLoop, audio_part, generate, make_client, upload_audio
+from .gemini import (
+    STREAM_IDLE_TIMEOUT_S,
+    RepetitionLoop,
+    audio_part,
+    generate,
+    make_client,
+    upload_audio,
+)
 from .models import (
     Candidate,
     CandidateList,
@@ -39,6 +46,7 @@ class Config:
     window_minutes: float = 20.0  # 0 = transcribe the whole recording in one call
     overlap_seconds: float = 30.0
     window_attempts: int = 2  # re-rolls of a window the sanity gates reject
+    stream_timeout: float = STREAM_IDLE_TIMEOUT_S  # seconds of silence before a call is abandoned
 
     @property
     def lesson_date(self) -> str:
@@ -71,7 +79,7 @@ def run(cfg: Config) -> Path | None:
     # pass A
     def get_client():
         nonlocal client
-        client = client or make_client()
+        client = client or make_client(cfg.stream_timeout)
         return client
 
     transcript = _pass_a(cfg, work, audio, total, get_client)
@@ -81,7 +89,7 @@ def run(cfg: Config) -> Path | None:
     if candidates_path.exists():
         print(f"[detect] cached: {candidates_path}")
     else:
-        client = client or make_client()
+        client = get_client()
         print("[detect] flagging candidate learning moments")
         prompt = prompts.DETECT.format(transcript=transcript.model_dump_json())
         cands: CandidateList = generate(client, cfg.model, [prompt], CandidateList, progress=True)
@@ -105,7 +113,7 @@ def run(cfg: Config) -> Path | None:
     if moments_path.exists():
         print(f"[pass_b] cached: {moments_path}")
     else:
-        client = client or make_client()
+        client = get_client()
         clips_dir = work / "clips"
         clips_dir.mkdir(exist_ok=True)
         moments: list[Moment] = []
