@@ -29,8 +29,26 @@ from jp_lesson_distill.models import Transcript
 
 
 class FakeChunk:
-    def __init__(self, text: str):
+    def __init__(self, text: str, finish_reason=None, usage=None):
         self.text = text
+        self.candidates = [FakeCandidate(finish_reason)] if finish_reason else None
+        self.usage_metadata = usage
+
+
+class FakeCandidate:
+    def __init__(self, finish_reason):
+        self.finish_reason = finish_reason
+
+
+class FakeReason:
+    def __init__(self, name: str):
+        self.name = name
+
+
+class FakeUsage:
+    def __init__(self, thoughts: int, answer: int):
+        self.thoughts_token_count = thoughts
+        self.candidates_token_count = answer
 
 
 class FakeModels:
@@ -48,7 +66,7 @@ class FakeModels:
             for c in self.chunks:
                 if isinstance(c, Exception):
                     raise c
-                yield FakeChunk(c)
+                yield c if isinstance(c, FakeChunk) else FakeChunk(c)
 
         return stream()
 
@@ -150,3 +168,64 @@ def test_a_stall_that_clears_on_the_retry_succeeds():
     client.models.generate_content_stream = second_time_lucky
     out = generate(client, "fake-model", ["prompt"], Transcript)
     assert out.segments[0].text == "はい。"
+
+
+# --- running out of output budget (jld-hc9.3.4) --------------------------------
+
+TRUNCATED = '{"segments": [{"start": "00:01", "speaker": "teacher", "text": "はい'
+
+
+def test_the_output_ceiling_is_asked_for_explicitly():
+    client = FakeClient([VALID])
+    generate(client, "fake-model", ["prompt"], Transcript)
+    assert client.models.last_kwargs["config"].max_output_tokens == gemini.MAX_OUTPUT_TOKENS
+
+
+def test_a_truncated_response_says_what_ran_out():
+    """Without this it surfaced as 'Invalid JSON: EOF while parsing'."""
+    client = FakeClient([
+        FakeChunk(TRUNCATED, finish_reason=FakeReason("MAX_TOKENS"),
+                  usage=FakeUsage(thoughts=62_911, answer=2_563)),
+    ])
+    with pytest.raises(gemini.OutputBudgetExhausted) as caught:
+        generate(client, "fake-model", ["prompt"], Transcript)
+    message = str(caught.value)
+    assert "62911 thinking" in message and "2563 answer" in message
+    assert "window-minutes" in message  # the lever that actually helps
+
+
+def test_a_truncated_response_is_not_retried():
+    """A window too big to fit in one response will not fit on the second try either."""
+    client = FakeClient([
+        FakeChunk(TRUNCATED, finish_reason=FakeReason("MAX_TOKENS"),
+                  usage=FakeUsage(thoughts=1, answer=1)),
+    ])
+    with pytest.raises(gemini.OutputBudgetExhausted):
+        generate(client, "fake-model", ["prompt"], Transcript)
+    assert client.models.calls == 1
+
+
+def test_a_normal_finish_reason_is_left_alone():
+    client = FakeClient([FakeChunk(VALID, finish_reason=FakeReason("STOP"))])
+    assert generate(client, "fake-model", ["prompt"], Transcript).segments
+
+
+def test_the_partial_is_kept_for_inspection(tmp_path):
+    dump = tmp_path / "nested" / "pass_a_partial.json"
+    client = FakeClient([
+        FakeChunk(TRUNCATED, finish_reason=FakeReason("MAX_TOKENS"),
+                  usage=FakeUsage(thoughts=1, answer=1)),
+    ])
+    with pytest.raises(gemini.OutputBudgetExhausted) as caught:
+        generate(client, "fake-model", ["prompt"], Transcript, debug_dump=dump)
+    assert dump.read_text() == TRUNCATED
+    assert str(dump) in str(caught.value)
+
+
+def test_a_loop_keeps_its_evidence_too(tmp_path):
+    """This is how work/20260729/pass_a_partial.attempt1.json came to exist."""
+    dump = tmp_path / "pass_a_partial.json"
+    client = FakeClient(['{"segments": [{"text": "'] + ["持っ、"] * (LOOP_MIN_REPEATS * 2))
+    with pytest.raises(RepetitionLoop):
+        generate(client, "fake-model", ["prompt"], Transcript, debug_dump=dump)
+    assert "持っ、" * LOOP_MIN_REPEATS in dump.read_text()

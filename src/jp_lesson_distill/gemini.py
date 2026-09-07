@@ -69,6 +69,18 @@ LOOP_MIN_REPEATS = 20    # consecutive repeats before we believe it
 # a real lesson has supplied the distribution.
 STREAM_IDLE_TIMEOUT_S = 300.0
 
+# Thinking tokens are billed against the OUTPUT budget, so deliberation can starve the
+# response itself: a 59-minute Pass A once spent 62,911 tokens thinking and had 2,563 left
+# for the transcript, truncating it ~50 segments in. That surfaced as an opaque "Invalid
+# JSON: EOF while parsing", which is why the diagnostic below exists — the failure is worth
+# naming, and the partial output is worth keeping (the 2026-07-29 loop sample this repo
+# tests against is exactly such a dump).
+MAX_OUTPUT_TOKENS = 65536
+
+
+class OutputBudgetExhausted(RuntimeError):
+    """The response hit the output-token ceiling and stopped mid-JSON."""
+
 
 class RepetitionLoop(RuntimeError):
     """The model started cycling on one fragment; the rest of this call is garbage."""
@@ -140,7 +152,8 @@ def audio_part(path: Path) -> types.Part:
 
 
 def generate(client: genai.Client, model: str, contents: list, schema: type,
-             temperature: float = 0.2, progress: bool = False):
+             temperature: float = 0.2, progress: bool = False,
+             debug_dump: Path | None = None):
     def attempt():
         started = time.monotonic()
         stream = client.models.generate_content_stream(
@@ -150,6 +163,7 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
                 response_mime_type="application/json",
                 response_schema=schema,
                 temperature=temperature,
+                max_output_tokens=MAX_OUTPUT_TOKENS,
             ),
         )
         pieces: list[str] = []
@@ -159,10 +173,17 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
         first_byte: float | None = None
         longest_gap = 0.0
         previous = started
+        finish = None
+        usage = None
         for i, chunk in enumerate(stream):
             now = time.monotonic()
             longest_gap = max(longest_gap, now - previous)
             previous = now
+            for candidate in chunk.candidates or []:
+                if candidate.finish_reason:
+                    finish = candidate.finish_reason
+            if chunk.usage_metadata:
+                usage = chunk.usage_metadata
             if chunk.text:
                 if first_byte is None:
                     first_byte = now - started
@@ -172,10 +193,11 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
                 if unit is not None:
                     if progress:
                         print(flush=True)
+                    saved = _dump(debug_dump, "".join(pieces))
                     raise RepetitionLoop(
                         f"the model is cycling on {unit!r} "
                         f"({LOOP_MIN_REPEATS}+ times in a row) after "
-                        f"{sum(len(p) for p in pieces):,} characters"
+                        f"{sum(len(p) for p in pieces):,} characters{saved}"
                     )
             if progress and i % 10 == 0:
                 print(".", end="", flush=True)
@@ -184,12 +206,32 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
             text = "".join(pieces)
             print(f"[gemini] stream: {len(text):,} chars in {time.monotonic() - started:.0f}s "
                   f"(first byte {first_byte or 0:.1f}s, longest gap {longest_gap:.1f}s)")
-        return "".join(pieces)
+        return "".join(pieces), finish, usage
 
-    text = _with_retry(attempt, "generate")
+    text, finish, usage = _with_retry(attempt, "generate")
     if not text.strip():
         raise RuntimeError("empty Gemini response")
+    if finish is not None and getattr(finish, "name", "") == "MAX_TOKENS":
+        # Retrying will not help — the window asked for more output than a response can
+        # hold — so say what ran out, and keep the truncated JSON to look at.
+        thoughts = getattr(usage, "thoughts_token_count", None)
+        answer = getattr(usage, "candidates_token_count", None)
+        raise OutputBudgetExhausted(
+            f"the response hit the {MAX_OUTPUT_TOKENS:,}-token output ceiling and stopped "
+            f"mid-JSON: {thoughts} thinking + {answer} answer tokens. Thinking is drawn from "
+            "the same budget as the answer, so a shorter --window-minutes (or less thinking) "
+            "is the lever, not a retry." + _dump(debug_dump, text)
+        )
     return schema.model_validate_json(text)
+
+
+def _dump(path: Path | None, text: str) -> str:
+    """Keep a failed response for inspection; the phrase to append to the error."""
+    if path is None or not text:
+        return ""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return f". Partial output saved to {path}"
 
 
 def _with_retry(fn, what: str, attempts: int = 4):

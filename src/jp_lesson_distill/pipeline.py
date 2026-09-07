@@ -224,7 +224,9 @@ def _transcribe_window(cfg: Config, get_client, audio: Path, tag: str, span: str
         try:
             wt: Transcript = generate(client, cfg.model,
                                       [upload_audio(client, audio), prompts.PASS_A],
-                                      Transcript, temperature=temperature, progress=True)
+                                      Transcript, temperature=temperature, progress=True,
+                                      debug_dump=wpath.with_name(
+                                          f"pass_a_partial_{wpath.stem}.attempt{n}.json"))
         except RepetitionLoop as loop:
             # The abort is the whole point: a loop returns no usable JSON at all, so there
             # is no attempt to score and nothing to promote. The retry is the one already
