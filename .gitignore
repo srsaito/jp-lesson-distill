@@ -8,3 +8,7 @@ __pycache__/
 .dolt/
 *.db
 .beads-credential-key
+
+# bd exports its JSONL to .beads/issues.jsonl; in a worktree it also drops a stray
+# copy at the repo root on every commit (see jld-78z). Keep it out of the tree.
+/issues.jsonl
