@@ -13,7 +13,12 @@
 - **No second retry path**, deliberately: `_transcribe_window`'s `--window-attempts` already re-rolls warmer, and a warmer re-roll is exactly what breaks a degenerate decode. A window whose every attempt loops now fails loudly with resume instructions — a loop leaves no partial transcript to promote — and names a **shorter** `--window-minutes` as the lever, never `--window-minutes 0`.
 - **`MAX_TOKENS` is named instead of crashing**: `OutputBudgetExhausted` reports the thinking/answer split (the historical case spent 62,911 tokens thinking and had 2,563 left for the transcript) where it used to surface as "Invalid JSON: EOF while parsing". Not retried — a window too big to fit will not fit on a second try. `thinking_budget` deliberately *not* restored from the old patch; it is a no-op on 3.x and `thinking_level` is `jld-hc9.1`.
 - Failed responses are kept as `work/<date>/pass_a_partial_*.json` on both failures — which is how the loop fixture these tests run against came to exist.
-- 102 offline tests. Smoke test passes end-to-end (both planted errors recovered verbatim). The vault skill's manual stall-recovery callout is rewritten but **left uncommitted in the vault** — Steven's own checkout.
+- 102 offline tests. Smoke test passes end-to-end (both planted errors recovered verbatim). The vault skill's manual stall-recovery callout is rewritten and committed (Obsidian Git picked it up in `9746cc3`).
+
+## Tooling note (2026-09-09 — bd upgraded 1.0.2 → 1.2.2)
+- **bd is one Homebrew binary shared by every repo; the databases are per-repo and independent.** Three on this machine: `jp-lesson-distill`, `flashgen` (both remote-backed via `sync.remote`) and `flashgen-mcp` (an empty scaffold, 0 issues, no beads sync remote — its *git* origin exists and is unrelated).
+- **1.2.2 refuses to auto-migrate a remote-backed database** (v32 → v53, 21 migrations): migrating two clones independently forks the schema silently and unrecoverably. This MacBook is the designated migrator, so each was migrated with `BD_ALLOW_REMOTE_MIGRATE=1 bd migrate` and published with `bd dolt push`. Another machine must never repeat that — it adopts via `bd bootstrap` instead. Pre-upgrade backups (physical database + logical export) are in `~/Backups/beads/*-20260909-pre-1.2.2/`.
+- **Two bd bugs this session are fixed by the upgrade.** `jld-78z` (a stray root `issues.jsonl` force-added past `.gitignore` on every commit) no longer reproduces — verified with a hooked commit. The shadowed-database problem is the changelog's *"worktree: don't prefer inherited .beads/ over shared fallback"* in v1.0.3, which is exactly what was hit here.
 
 ## Snapshot (2026-07-09)
 Project bootstrapped from a design session in the ML vault: charter, ADRs 0001–0004, architecture doc, and the Phase-1 audio pipeline implemented (`distill` CLI: prep → Pass A transcript → moment detection → Pass B re-listen → emit to vault `_raw/`). Vault-side `/distill-jp-lesson` skill created in the General vault.
@@ -67,8 +72,6 @@ Project bootstrapped from a design session in the ML vault: charter, ADRs 0001�
 ## Next actions
 - [ ] `jld-hc9.3.3` — collect the three `[gemini] stream:` lines from the next real lesson and tighten `STREAM_IDLE_TIMEOUT_S` from 300 s. Costs nothing extra: just read the run log.
 - [ ] `jld-hc9.1` (pin the model, `thinking_level`) is now the epic's only open blocker before `jld-hc9.5`.
-- [ ] Commit the vault-side skill edit (`.claude/commands/distill-jp-lesson.md`, stall callout rewritten for `jld-hc9.3.5`) — left uncommitted because the vault is Steven's own checkout.
-- [ ] `jld-78z` — bd's pre-commit hook drops a stray root `issues.jsonl` on every commit from a secondary checkout and force-adds it past `.gitignore`; the working routine is `bd export -o .beads/issues.jsonl` then `git commit --no-verify`.
 - [ ] `jld-beb` (merged turns, 12%) is the biggest measured quality defect in Pass A output. Needs a second lesson's merged-turn rate before choosing between a prompt change and a post-hoc splitter.
 - [ ] `jld-lg6` (played textbook audio): decide between a `played` value in the schema and an offline span detector. The span detector is testable and costs nothing; asking Gemini to tell a recording from a live voice mid-transcription is exactly the kind of added instruction that destabilised long calls before.
 - [ ] Run `/distill-jp-lesson` in the General vault on the 20260707 output; create the first delta cards via FlashGen.
