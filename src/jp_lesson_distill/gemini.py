@@ -69,6 +69,44 @@ LOOP_MIN_REPEATS = 20    # consecutive repeats before we believe it
 # a real lesson has supplied the distribution.
 STREAM_IDLE_TIMEOUT_S = 300.0
 
+# --- which model, and how hard it is allowed to think (jld-hc9.1) ---
+#
+# PINNED, not an alias. `gemini-pro-latest` is a moving target: it served Gemini 2.5 Pro when
+# this pipeline was built and resolves to gemini-3.1-pro-preview today, so two runs a few days
+# apart can be two different models with no sign of it in any output file. That is not
+# hypothetical here — the 2026-08-18 and 2026-08-21 transcriptions of the same lesson agree on
+# the words and disagree on WHO SPOKE for a whole stretch (jld-dli), and "the alias moved" was
+# the leading explanation we could not rule out. A pinned id makes that question answerable:
+# moments.json records exactly what transcribed the lesson.
+#
+# The alias is still available through --model, and _report_usage prints the version the API
+# actually served whenever it differs from the id we asked for — so drift is visible either way.
+DEFAULT_MODEL = "gemini-3.1-pro-preview"
+
+# MEDIUM, and the reasoning that says `low` is measured and wrong (ADR-0007).
+#
+# Transcription looks mechanical — hear the words, write them down — and thinking is drawn from
+# the SAME 65,536-token budget as the answer (see below), so it is tempting to turn it down.
+# But Pass A does two jobs, and the second one is inference: deciding WHO SPOKE. Told to think
+# less, that is the half that goes first. Three `low` runs over one real 20-minute window got
+# 6 of 15 address-form cue lines wrong — short, cleanly split lines that can only be the
+# student, labelled `teacher` — where the run this project measured at 89% got 5/5.
+#
+# `medium` is also close to the status quo: the model's own default spends ~11,500 thinking
+# tokens on that window and `medium` spends ~9,300 (14% of the output budget), against a `low`
+# call so cheap the API declines to report a count. The cost is about 50 s per window.
+#
+# Use thinking_level, never thinking_budget: on Gemini 3.x thinking_budget is silently ignored,
+# and sending both is a 400. Detect and Pass B do not set a level at all — detect reasons about
+# a transcript and Pass B adjudicates an error, which are the parts of this pipeline where
+# thinking was never in question.
+PASS_A_THINKING_LEVEL = "MEDIUM"
+
+# What the CLI is allowed to offer. `MINIMAL` exists in the SDK enum and this model rejects it —
+# "Thinking level MINIMAL is not supported for this model" (400) — so offering it would only
+# hand out a flag that always fails. Re-check this list when the pin moves (ADR-0006).
+THINKING_LEVELS = ("low", "medium", "high")
+
 # Thinking tokens are billed against the OUTPUT budget, so deliberation can starve the
 # response itself: a 59-minute Pass A once spent 62,911 tokens thinking and had 2,563 left
 # for the transcript, truncating it ~50 segments in. That surfaced as an opaque "Invalid
@@ -76,6 +114,12 @@ STREAM_IDLE_TIMEOUT_S = 300.0
 # naming, and the partial output is worth keeping (the 2026-07-29 loop sample this repo
 # tests against is exactly such a dump).
 MAX_OUTPUT_TOKENS = 65536
+
+# When to complain about the thinking count. The number that matters is not "is this more than
+# `low` should cost" — nobody knows what a level costs on a given minute of audio — but "is
+# thinking competing with the transcript for the same budget". A quarter of the window is the
+# point where it measurably is; the historical truncation was at 96%.
+THINKING_WARN_SHARE = 0.25
 
 
 class OutputBudgetExhausted(RuntimeError):
@@ -128,7 +172,7 @@ def make_client(idle_timeout_s: float = STREAM_IDLE_TIMEOUT_S) -> genai.Client:
         key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise SystemExit("GEMINI_API_KEY is not set (shell env or .env in the repo)")
-    print(f"[gemini] aborting any stream that goes quiet for {idle_timeout_s:.0f}s")
+    print(f"[gemini] aborting any stream that goes quiet for {idle_timeout_s:.0f}s", flush=True)
     # explicit api_key so a stray GOOGLE_API_KEY in the shell can never win
     return genai.Client(
         api_key=key,
@@ -153,18 +197,23 @@ def audio_part(path: Path) -> types.Part:
 
 def generate(client: genai.Client, model: str, contents: list, schema: type,
              temperature: float = 0.2, progress: bool = False,
-             debug_dump: Path | None = None):
+             debug_dump: Path | None = None, thinking_level: str | None = None):
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=schema,
+        temperature=temperature,
+        max_output_tokens=MAX_OUTPUT_TOKENS,
+    )
+    if thinking_level is not None:
+        # thinking_level ALONE. thinking_budget alongside it is a 400, and by itself on 3.x it
+        # is accepted and ignored — which is how a Pass A call came to spend 62,911 tokens
+        # thinking while its config said otherwise.
+        config.thinking_config = types.ThinkingConfig(thinking_level=thinking_level)
+
     def attempt():
         started = time.monotonic()
         stream = client.models.generate_content_stream(
-            model=model,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=schema,
-                temperature=temperature,
-                max_output_tokens=MAX_OUTPUT_TOKENS,
-            ),
+            model=model, contents=contents, config=config,
         )
         pieces: list[str] = []
         tail = ""  # rolling window, so the check stays O(1) per chunk
@@ -174,7 +223,12 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
         longest_gap = 0.0
         previous = started
         finish = None
-        usage = None
+        # Token counts arrive on whichever chunks carry usage_metadata, and a later chunk can
+        # carry one that omits a field the earlier one had. Keep the last value SEEN for each
+        # rather than the last usage object, or a count that was reported gets read as absent.
+        thoughts: int | None = None
+        answer: int | None = None
+        served = None  # the model the API actually used; an alias resolves here
         for i, chunk in enumerate(stream):
             now = time.monotonic()
             longest_gap = max(longest_gap, now - previous)
@@ -183,7 +237,9 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
                 if candidate.finish_reason:
                     finish = candidate.finish_reason
             if chunk.usage_metadata:
-                usage = chunk.usage_metadata
+                thoughts = _latest(thoughts, chunk.usage_metadata, "thoughts_token_count")
+                answer = _latest(answer, chunk.usage_metadata, "candidates_token_count")
+            served = getattr(chunk, "model_version", None) or served
             if chunk.text:
                 if first_byte is None:
                     first_byte = now - started
@@ -205,17 +261,17 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
             print(flush=True)
             text = "".join(pieces)
             print(f"[gemini] stream: {len(text):,} chars in {time.monotonic() - started:.0f}s "
-                  f"(first byte {first_byte or 0:.1f}s, longest gap {longest_gap:.1f}s)")
-        return "".join(pieces), finish, usage
+                  f"(first byte {first_byte or 0:.1f}s, longest gap {longest_gap:.1f}s)",
+                  flush=True)
+        return "".join(pieces), finish, (thoughts, answer), served
 
-    text, finish, usage = _with_retry(attempt, "generate")
+    text, finish, (thoughts, answer), served = _with_retry(attempt, "generate")
+    _report_usage(model, served, thinking_level, thoughts, answer, progress)
     if not text.strip():
         raise RuntimeError("empty Gemini response")
     if finish is not None and getattr(finish, "name", "") == "MAX_TOKENS":
         # Retrying will not help — the window asked for more output than a response can
         # hold — so say what ran out, and keep the truncated JSON to look at.
-        thoughts = getattr(usage, "thoughts_token_count", None)
-        answer = getattr(usage, "candidates_token_count", None)
         raise OutputBudgetExhausted(
             f"the response hit the {MAX_OUTPUT_TOKENS:,}-token output ceiling and stopped "
             f"mid-JSON: {thoughts} thinking + {answer} answer tokens. Thinking is drawn from "
@@ -223,6 +279,49 @@ def generate(client: genai.Client, model: str, contents: list, schema: type,
             "is the lever, not a retry." + _dump(debug_dump, text)
         )
     return schema.model_validate_json(text)
+
+
+def _latest(known: int | None, usage, field: str) -> int | None:
+    seen = getattr(usage, field, None)
+    return known if seen is None else seen
+
+
+def _report_usage(model: str, served: str | None, thinking_level: str | None,
+                  thoughts: int | None, answer: int | None, progress: bool) -> None:
+    """Say what the call actually cost, and complain when thinking crowds out the answer.
+
+    Two things are worth watching on every call, and neither is visible anywhere else:
+
+    WHICH MODEL ANSWERED. With a pinned id this is a no-op. With an alias it is the only
+    place the resolution is ever written down — `gemini-pro-latest` served 2.5 Pro when this
+    was built and serves 3.1 Pro now, and nothing in a transcript records which.
+
+    WHAT THINKING COST. thoughts_token_count is the check that `thinking_level` landed:
+    thinking_budget is ignored on 3.x rather than rejected, so a config that thinks it asked
+    for less can be having no effect at all, and the only evidence is the count. None means
+    UNKNOWN, never zero — an absent field is the API declining to say, and treating that as
+    "no thinking happened" is how you conclude a setting works when it does not.
+    """
+    if served and served != model:
+        print(f"[gemini] served by {served} (asked for {model}) — "
+              "an alias moved under you at some point; pin --model to make runs comparable",
+              flush=True)
+    if progress:
+        asked = f", thinking_level={thinking_level.lower()}" if thinking_level else ""
+        seen = "unknown" if thoughts is None else f"{thoughts:,}"
+        print(f"[gemini] tokens: {seen} thinking + "
+              f"{'unknown' if answer is None else f'{answer:,}'} answer "
+              f"of {MAX_OUTPUT_TOKENS:,}{asked}", flush=True)
+    if thinking_level is not None and thoughts is None:
+        print(f"[gemini] warning: asked for thinking_level={thinking_level.lower()} and the API "
+              "reported no thinking count, so whether it took effect is UNKNOWN (not zero)",
+              flush=True)
+    if thoughts is not None and thoughts > THINKING_WARN_SHARE * MAX_OUTPUT_TOKENS:
+        print(f"[gemini] warning: {thoughts:,} thinking tokens is over "
+              f"{THINKING_WARN_SHARE:.0%} of the {MAX_OUTPUT_TOKENS:,}-token output budget, "
+              "which the answer shares — the transcript is being squeezed"
+              + ("" if thinking_level else "; Pass A asks for thinking_level=low, "
+                 "this call did not"), flush=True)
 
 
 def _dump(path: Path | None, text: str) -> str:
@@ -235,6 +334,13 @@ def _dump(path: Path | None, text: str) -> str:
 
 
 def _with_retry(fn, what: str, attempts: int = 4):
+    """Retry transient failures with backoff.
+
+    Every print here carries flush=True, which is not decoration: stdout is block-buffered
+    when the run is redirected to a log, so without it the messages that explain a call still
+    in flight — "the stream went quiet, retrying" — sit in a 4 KB buffer until the process
+    ends. A 20-minute window that was retrying four times looked to us like one silent hang.
+    """
     for n in range(1, attempts + 1):
         try:
             return fn()
@@ -244,16 +350,18 @@ def _with_retry(fn, what: str, attempts: int = 4):
             if n == attempts:
                 raise
             print(f"[{what}] the stream went quiet for longer than the client allows and was "
-                  f"aborted, retry {n}/{attempts - 1}…")
+                  f"aborted, retry {n}/{attempts - 1}…", flush=True)
             time.sleep(5 * n)
         except TRANSIENT as e:
             if n == attempts:
                 raise
-            print(f"[{what}] transient network error ({e.__class__.__name__}), retry {n}/{attempts - 1}…")
+            print(f"[{what}] transient network error ({e.__class__.__name__}), "
+                  f"retry {n}/{attempts - 1}…", flush=True)
             time.sleep(5 * n)
         except genai_errors.APIError as e:
             if getattr(e, "code", None) not in RETRYABLE_CODES or n == attempts:
                 raise
             wait = 30 * n  # free-tier RPM windows are per-minute; back off generously
-            print(f"[{what}] API {e.code} (rate limit/server), waiting {wait}s, retry {n}/{attempts - 1}…")
+            print(f"[{what}] API {e.code} (rate limit/server), waiting {wait}s, "
+                  f"retry {n}/{attempts - 1}…", flush=True)
             time.sleep(wait)

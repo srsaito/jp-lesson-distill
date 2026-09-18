@@ -11,6 +11,8 @@ from pathlib import Path
 from . import prompts
 from .audio import clip_audio, duration_seconds, prep_audio, split_windows
 from .gemini import (
+    DEFAULT_MODEL,
+    PASS_A_THINKING_LEVEL,
     STREAM_IDLE_TIMEOUT_S,
     RepetitionLoop,
     audio_part,
@@ -38,7 +40,7 @@ CLIP_PAD = 15.0  # seconds of context on each side of a candidate
 class Config:
     recording: Path
     date: str  # YYYYMMDD
-    model: str = "gemini-pro-latest"
+    model: str = DEFAULT_MODEL
     work_dir: Path = Path("work")
     out_dir: Path = Path("/Users/stevensaito/Docs/Vault-GeneralNotes/_raw")
     skip_pass_b: bool = False
@@ -47,6 +49,9 @@ class Config:
     overlap_seconds: float = 30.0
     window_attempts: int = 2  # re-rolls of a window the sanity gates reject
     stream_timeout: float = STREAM_IDLE_TIMEOUT_S  # seconds of silence before a call is abandoned
+    # Pass A only; None leaves the model's own default in place. Detect and Pass B are never
+    # given a level — those two stages are where thinking earns its tokens.
+    pass_a_thinking: str | None = PASS_A_THINKING_LEVEL
 
     @property
     def lesson_date(self) -> str:
@@ -225,6 +230,7 @@ def _transcribe_window(cfg: Config, get_client, audio: Path, tag: str, span: str
             wt: Transcript = generate(client, cfg.model,
                                       [upload_audio(client, audio), prompts.PASS_A],
                                       Transcript, temperature=temperature, progress=True,
+                                      thinking_level=cfg.pass_a_thinking,
                                       debug_dump=wpath.with_name(
                                           f"pass_a_partial_{wpath.stem}.attempt{n}.json"))
         except RepetitionLoop as loop:

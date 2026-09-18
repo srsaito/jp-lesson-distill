@@ -1,0 +1,174 @@
+{
+  "what": "Pass A thinking-level arms on one real 20-minute window (ADR-0007, jld-hc9.1)",
+  "measured": "2026-09-17",
+  "window": "2026-08-17 lesson, window 1, 00:00-20:00 of 56:00",
+  "model": "gemini-3.1-pro-preview",
+  "temperature": 0.2,
+  "prompt": "prompts.PASS_A, unchanged since the first commit",
+  "note": "Timestamps and counts only — no utterance text; this repo is public. address_forms is the jld-86b canary: cue lines whose label matches the address form they contain.",
+  "runs": [
+    {
+      "level": "low",
+      "stream_s": 53,
+      "first_byte_s": 4.4,
+      "thinking_tokens": null,
+      "answer_tokens": 8500,
+      "segments": 186,
+      "density": 9.3,
+      "coverage": 1.0,
+      "max_span_s": 36,
+      "dead_s": 0,
+      "address_forms": [
+        3,
+        5
+      ]
+    },
+    {
+      "level": "low",
+      "stream_s": 50,
+      "first_byte_s": 4.1,
+      "thinking_tokens": null,
+      "answer_tokens": 7483,
+      "segments": 158,
+      "density": 7.9,
+      "coverage": 1.0,
+      "max_span_s": 42,
+      "dead_s": 0,
+      "address_forms": [
+        2,
+        5
+      ]
+    },
+    {
+      "level": "low",
+      "stream_s": 52,
+      "first_byte_s": 3.6,
+      "thinking_tokens": null,
+      "answer_tokens": 8070,
+      "segments": 174,
+      "density": 8.7,
+      "coverage": 1.0,
+      "max_span_s": 45,
+      "dead_s": 0,
+      "address_forms": [
+        1,
+        5
+      ]
+    },
+    {
+      "level": "medium",
+      "stream_s": 98,
+      "first_byte_s": 59.2,
+      "thinking_tokens": 9262,
+      "answer_tokens": 7075,
+      "segments": 145,
+      "density": 7.2,
+      "coverage": 1.0,
+      "max_span_s": 35,
+      "dead_s": 0,
+      "address_forms": [
+        4,
+        5
+      ]
+    }
+  ],
+  "model_default_probe": {
+    "comment": "Patient single call, no thinking_config, no retry — to establish where the model's own default sits. Not scored for diarization.",
+    "first_byte_s": 71.1,
+    "complete_s": 108.8,
+    "thinking_tokens": 11507,
+    "chars": 16043
+  },
+  "reference": {
+    "comment": "The 2026-08-20 windowed Pass A run of the same window — the run whose merged transcript later scored 89% against 41 blind hand labels (jld-dli).",
+    "segments": 192,
+    "coverage": 1.0,
+    "address_forms": [
+      5,
+      5
+    ]
+  },
+  "verbatim_proxy": {
+    "comment": "Student filler rate per 1,000 student characters, and total student characters. A transcriber drifting toward fluent text drops fillers; none of the arms did.",
+    "low": [
+      [
+        13.0,
+        2152
+      ],
+      [
+        14.7,
+        2108
+      ],
+      [
+        18.7,
+        2144
+      ]
+    ],
+    "medium": [
+      [
+        14.2,
+        2247
+      ]
+    ],
+    "reference": [
+      [
+        13.7,
+        2113
+      ]
+    ]
+  },
+  "synthetic_lesson": {
+    "comment": "work/test/test_lesson.m4a, 34 s, 4 runs per arm. 'stalls' are aborted streams that _with_retry re-rolled. 'planted_uncorrected_preserved' is 「面白いでした」 surviving un-normalised — see jld-5vz. No arm preserves the planted uncorrected error reliably, so that is model drift rather than a level effect (jld-5vz).",
+    "low": {
+      "stalls": 0,
+      "wall_s": [
+        9,
+        8,
+        9,
+        9
+      ],
+      "thinking_tokens": [
+        821,
+        838,
+        818,
+        904
+      ],
+      "planted_uncorrected_preserved": 0
+    },
+    "model_default": {
+      "stalls": 2,
+      "wall_s": [
+        106,
+        13,
+        206,
+        12
+      ],
+      "thinking_tokens": [
+        1224,
+        1401,
+        1195,
+        1528
+      ],
+      "planted_uncorrected_preserved": 1
+    },
+    "minimal": {
+      "error": "400 INVALID_ARGUMENT: Thinking level MINIMAL is not supported for this model"
+    },
+    "medium": {
+      "stalls": 0,
+      "wall_s": [
+        10,
+        13,
+        11,
+        12
+      ],
+      "thinking_tokens": [
+        877,
+        1470,
+        990,
+        1384
+      ],
+      "planted_uncorrected_preserved": 1
+    }
+  }
+}
