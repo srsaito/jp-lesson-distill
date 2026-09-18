@@ -94,10 +94,17 @@ thing to degrade when the model is told to think less.
 - `medium` produced **145 segments where the reference produced 192**, and its one canary miss
   was a merged fragment. Under-splitting is `jld-beb`, the largest measured defect in Pass A, so
   the level may be trading one defect for another; the follow-up measures both.
-- **The intermittent stall is not a thinking-level effect and this decision does not fix it.**
-  Today it hit one default-level call and one `medium` call on a 20-minute window, and 2 of 4
-  default-level calls on the synthetic lesson; `low` saw none in three, which at n=3 means
-  nothing. It is the same `jld-hc9.3` stall, and `_with_retry` is still what handles it.
+- **Some of what looks like a stall is a call that is still thinking, and aborting it is still
+  right.** A patient probe at `medium` (no retry, 1500 s tolerance) produced its first byte at
+  **347.8 s** — past the 300 s watchdog, so the pipeline would have aborted and re-rolled it.
+  That sounds like the watchdog is too tight until you look at what the patient call returned:
+  **5,769 characters against 15,787** for the healthy `medium` run on the same window, about a
+  third, which is the shape of the silent compression ADR-0005 was written about. So a slow
+  first byte did not buy a good transcript here, and a re-roll is cheaper than waiting for a bad
+  one. One observation, and the probe did not keep the transcript to score — but it is evidence
+  against *raising* the timeout, which was the obvious reading an hour earlier.
+- The intermittent stall itself is not a thinking-level effect and this decision does not fix
+  it. It is the same `jld-hc9.3` phenomenon and `_with_retry` is still what handles it.
 - The first-byte figures are the calibration `jld-hc9.3.3` was waiting for, and they are
   level-dependent: **4 s at `low`, 59 s at `medium`, 71 s at the model default**, against a
   300 s idle timeout. Noted on that issue rather than changed here.

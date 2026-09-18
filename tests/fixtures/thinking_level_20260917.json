@@ -170,5 +170,13 @@
       ],
       "planted_uncorrected_preserved": 1
     }
+  },
+  "slow_call_probe": {
+    "comment": "Patient probe at medium (no retry, 1500 s idle tolerance) on the same window. First byte at 347.8 s is past the 300 s watchdog — but it returned 5,769 chars against the healthy medium run's 15,787 on the same audio, about a third, which is the silent compression shape of ADR-0005. Evidence against RAISING the idle timeout (jld-hc9.3.3). Not scored: the probe did not keep the transcript.",
+    "level": "medium",
+    "first_byte_s": 347.8,
+    "complete_s": 364.1,
+    "chars": 5769,
+    "healthy_medium_chars": 15787
   }
 }
