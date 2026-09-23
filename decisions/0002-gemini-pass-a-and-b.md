@@ -5,6 +5,10 @@ date: 2026-07-09
 
 # 0002 — Gemini for Pass A (full transcript) and Pass B (clip re-listen)
 
+> **The model-default clause below is superseded by [[0006-pin-the-model]]** (2026-09-17): the
+> default is now a pinned id, because the alias moved under two runs of the same lesson and left
+> no way to tell. The rest of this ADR stands.
+
 ## Context
 STT models are trained toward fluent text, so they auto-correct learner errors — precisely the signal this project needs to preserve. Japanese worsens this: kana/kanji normalization hides pronunciation-level mistakes. The pipeline therefore needs an **instructable listener** that can be told "do NOT fix the student's errors."
 

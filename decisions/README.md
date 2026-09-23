@@ -9,3 +9,4 @@ Architecture Decision Records for jp-lesson-distill. One decision per file, `NNN
 | [[0003-moments-json-contract]] | `moments.json` is the repo↔vault boundary | Accepted |
 | [[0004-recordings-canonical-onedrive]] | Recordings stay canonical in OneDrive; nothing stored in vaults or repo | Accepted |
 | [[0005-windowed-pass-a]] | Pass A windows the recording internally (~20 min, 30 s overlap) and merges to one transcript | Accepted |
+| [[0006-pin-the-model]] | The default model is a pinned id, not a `-latest` alias | Accepted |

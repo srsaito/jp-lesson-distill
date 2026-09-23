@@ -5,7 +5,12 @@ import re
 import sys
 from pathlib import Path
 
-from .gemini import STREAM_IDLE_TIMEOUT_S
+from .gemini import (
+    DEFAULT_MODEL,
+    PASS_A_THINKING_LEVEL,
+    STREAM_IDLE_TIMEOUT_S,
+    THINKING_LEVELS,
+)
 from .pipeline import Config, run
 from .validate import build, dump, play, report, reset
 
@@ -17,8 +22,9 @@ def main() -> None:
     p = sub.add_parser("run", help="run the full pipeline on a recording")
     p.add_argument("recording", type=Path, help="path to the recording (audio or video; OneDrive sync path is fine)")
     p.add_argument("--date", required=True, help="lesson date, YYYYMMDD")
-    p.add_argument("--model", default="gemini-pro-latest",
-                   help="Gemini model (default: the -latest Pro alias; pin a dated model for reproducibility)")
+    p.add_argument("--model", default=DEFAULT_MODEL,
+                   help=f"Gemini model (default: {DEFAULT_MODEL}, pinned — the -latest aliases "
+                        "move under you, so two runs days apart are not comparable)")
     p.add_argument("--out-dir", type=Path, default=Path("/Users/stevensaito/Docs/Vault-GeneralNotes/_raw"))
     p.add_argument("--work-dir", type=Path, default=Path("work"))
     p.add_argument("--skip-pass-b", action="store_true", help="stop after moment detection (cheap dry run)")
@@ -31,6 +37,12 @@ def main() -> None:
     p.add_argument("--window-attempts", type=int, default=2,
                    help="how many times to transcribe a window that fails the sanity gates "
                         "(1 = never retry; the least-bad attempt is kept either way)")
+    p.add_argument("--pass-a-thinking", default=PASS_A_THINKING_LEVEL.lower(),
+                   choices=[*THINKING_LEVELS, "model-default"],
+                   help="how hard the model may think while TRANSCRIBING (default: "
+                        f"{PASS_A_THINKING_LEVEL.lower()}, measured — 'low' is faster and gets "
+                        "the SPEAKER wrong, see ADR-0007). Detect and Pass B always use the "
+                        "model default")
     p.add_argument("--stream-timeout", type=float, default=STREAM_IDLE_TIMEOUT_S,
                    help="seconds of silence before a streaming call is abandoned and re-rolled; "
                         "this is a gap between chunks, not a budget for the whole response "
@@ -94,6 +106,8 @@ def main() -> None:
             skip_pass_b=args.skip_pass_b, max_moments=args.max_moments,
             window_minutes=args.window_minutes, overlap_seconds=args.overlap_seconds,
             window_attempts=args.window_attempts, stream_timeout=args.stream_timeout,
+            pass_a_thinking=(None if args.pass_a_thinking == "model-default"
+                             else args.pass_a_thinking.upper()),
         ))
     except KeyboardInterrupt:
         sys.exit(130)
