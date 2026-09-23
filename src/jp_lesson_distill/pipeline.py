@@ -10,7 +10,14 @@ from pathlib import Path
 
 from . import prompts
 from .audio import clip_audio, duration_seconds, prep_audio, split_windows
-from .gemini import audio_part, generate, make_client, upload_audio
+from .gemini import (
+    STREAM_IDLE_TIMEOUT_S,
+    RepetitionLoop,
+    audio_part,
+    generate,
+    make_client,
+    upload_audio,
+)
 from .models import (
     Candidate,
     CandidateList,
@@ -39,6 +46,7 @@ class Config:
     window_minutes: float = 20.0  # 0 = transcribe the whole recording in one call
     overlap_seconds: float = 30.0
     window_attempts: int = 2  # re-rolls of a window the sanity gates reject
+    stream_timeout: float = STREAM_IDLE_TIMEOUT_S  # seconds of silence before a call is abandoned
 
     @property
     def lesson_date(self) -> str:
@@ -71,7 +79,7 @@ def run(cfg: Config) -> Path | None:
     # pass A
     def get_client():
         nonlocal client
-        client = client or make_client()
+        client = client or make_client(cfg.stream_timeout)
         return client
 
     transcript = _pass_a(cfg, work, audio, total, get_client)
@@ -81,7 +89,7 @@ def run(cfg: Config) -> Path | None:
     if candidates_path.exists():
         print(f"[detect] cached: {candidates_path}")
     else:
-        client = client or make_client()
+        client = get_client()
         print("[detect] flagging candidate learning moments")
         prompt = prompts.DETECT.format(transcript=transcript.model_dump_json())
         cands: CandidateList = generate(client, cfg.model, [prompt], CandidateList, progress=True)
@@ -105,7 +113,7 @@ def run(cfg: Config) -> Path | None:
     if moments_path.exists():
         print(f"[pass_b] cached: {moments_path}")
     else:
-        client = client or make_client()
+        client = get_client()
         clips_dir = work / "clips"
         clips_dir.mkdir(exist_ok=True)
         moments: list[Moment] = []
@@ -204,22 +212,47 @@ def _transcribe_window(cfg: Config, get_client, audio: Path, tag: str, span: str
     is promoted so the run can continue — loudly — rather than dying an hour in.
     """
     attempts: list[tuple[Transcript, WindowReport]] = []
-    for n in range(1, max(1, cfg.window_attempts) + 1):
+    looped = 0
+    tries = max(1, cfg.window_attempts)
+    for n in range(1, tries + 1):
         client = get_client()
         # Structured output on disfluent audio loops; a warmer retry breaks the loop.
         temperature = 0.2 + 0.2 * (n - 1)
         note = "" if n == 1 else f" (attempt {n}, temperature {temperature:g})"
         print(f"[pass_a] {tag} {span}: uploading and transcribing with {cfg.model}{note} "
               "(dots = transcript streaming in)")
-        wt: Transcript = generate(client, cfg.model, [upload_audio(client, audio), prompts.PASS_A],
-                                  Transcript, temperature=temperature, progress=True)
+        try:
+            wt: Transcript = generate(client, cfg.model,
+                                      [upload_audio(client, audio), prompts.PASS_A],
+                                      Transcript, temperature=temperature, progress=True,
+                                      debug_dump=wpath.with_name(
+                                          f"pass_a_partial_{wpath.stem}.attempt{n}.json"))
+        except RepetitionLoop as loop:
+            # The abort is the whole point: a loop returns no usable JSON at all, so there
+            # is no attempt to score and nothing to promote. The retry is the one already
+            # here — a warmer re-roll is what breaks a degenerate decode.
+            looped += 1
+            print(f"[pass_a] {tag}: ABORTED — {loop}")
+            if n < tries:
+                print(f"[pass_a] {tag}: retrying this window at a higher temperature "
+                      "(the other windows are unaffected)")
+            continue
         report = _report(tag, wt.segments, window_s)
         attempts.append((wt, report))
         if report.ok:
             return wt
-        if n < max(1, cfg.window_attempts):
+        if n < tries:
             _save(wpath.with_suffix(f".attempt{n}.json"), wt)
             print(f"[pass_a] {tag}: retrying this window (the other windows are unaffected)")
+
+    if not attempts:
+        raise RuntimeError(
+            f"{tag}: every one of {looped} attempt(s) ended in a repetition loop, so this "
+            f"window produced no transcript at all. Completed windows are cached, so "
+            f"re-running resumes here. A shorter --window-minutes is the lever that helps: "
+            f"the loop is the endpoint of a degradation curve that grows with how much "
+            f"self-generated text is already in the response."
+        )
 
     best, report = min(attempts, key=lambda pair: (len(pair[1].failures), -pair[1].coverage))
     print(f"[pass_a] {tag}: ALL {len(attempts)} attempts failed the sanity gates; "

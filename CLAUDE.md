@@ -39,7 +39,7 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 |---|---|---|
 | `cli.py` | `distill run` argparse front-end | flags only; no logic |
 | `pipeline.py` | stage orchestration + per-stage caching under `work/<date>/`; windowed Pass A and the overlap merge | every stage = one cached file; idempotent; re-run skips done stages |
-| `gemini.py` | google-genai wrapper: upload, **streamed** structured generation, retry | the only module that talks to the API |
+| `gemini.py` | google-genai wrapper: upload, **streamed** structured generation, retry, and the two stream-time aborts (idle timeout, repetition loop) | the only module that talks to the API; a failing call must die in seconds, not minutes |
 | `audio.py` | ffmpeg helpers (prep, window split, clip, duration) | bundled `imageio-ffmpeg` binary; no system install assumed; no ffprobe |
 | `prompts.py` | the three stage prompts | the product is the *student's errors* — every prompt says "do not fix" |
 | `models.py` | Pydantic schemas (= Gemini `response_schema`) + `moments.json` contract | changing `Moment`/`MomentsFile` means an ADR (ADR-0003) |
@@ -59,10 +59,12 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 
 ### Gemini rules (learned the expensive way — see GH #1/#2, epic `jld-hc9`)
 - **Never transcribe a full hour in one call.** Pass A does this for you (ADR-0005): ~20 min windows, ~30 s overlap, per-window transcription, offset-shifted timestamps, overlap split at its midpoint. Single-pass 60-min calls loop, truncate, or — worst — *silently compress*: valid JSON, plausible density, whole explanations missing. `--window-minutes 0` restores the single call; it exists for regression checks on short recordings, not for lessons.
-- **Always stream** (`generate_content_stream`); a non-streaming hour-long call gets its idle connection reset. Add a per-chunk inactivity watchdog — the HTTP timeout does not fire on a stream that trickles.
+- **Always stream** (`generate_content_stream`); a non-streaming hour-long call gets its idle connection reset.
+- **The client timeout is a per-gap READ timeout, not a budget for the response** (jld-hc9.3.2). The SDK turns `HttpOptions(timeout=<ms>)` into one scalar, httpx expands a scalar to all four fields, and httpx measures read timeouts *between chunks* — so the old `30*60*1000` said "tolerate half an hour of silence", which is exactly what a stalled call then did. `STREAM_IDLE_TIMEOUT_S` (300 s, `--stream-timeout`) replaces it; the value is **provisional until jld-hc9.3.3 calibrates it** against a real lesson's first-byte latencies, which every call now logs. Do NOT try per-field httpx timeouts: with `http_options.timeout` unset the SDK passes an explicit `None`, and httpx reads that as "no timeouts at all".
 - **Thinking config:** `gemini-pro-latest` is a moving alias (now Gemini 3.x). Use `thinking_level` (`low` for transcription); `thinking_budget` is silently ignored on 3.x. Never send both. Pin the model explicitly and upgrade deliberately.
 - Thinking and answer share the 65,536-token output window. Log `thoughts_token_count` — and treat `None` as "unknown", not zero.
-- Structured output (`response_schema`) + disfluent audio is a known repetition-loop trigger, and this corpus is *made of* disfluencies. Detect loops on the stream tail and abort in seconds; retry that window at a higher temperature.
+- Structured output (`response_schema`) + disfluent audio is a known repetition-loop trigger, and this corpus is *made of* disfluencies. `gemini.find_repetition_loop` watches the tail of every stream and aborts within ~60 characters; `_transcribe_window` then re-rolls that window warmer. **The floor is calibrated, not guessed** — real speech reaches 5 consecutive repeats of そう/はい/うん, so the threshold is 20 repeats of a unit up to 64 chars, which is silent on all 53 transcripts on disk. Don't lower it without re-running that sweep.
+- A truncated response (`finish_reason == MAX_TOKENS`) raises `OutputBudgetExhausted` naming the thinking/answer token split — it used to surface as "Invalid JSON: EOF while parsing". Both it and a loop dump the partial to `work/<date>/pass_a_partial_*.json`; that is where the loop fixture came from.
 - Retry 429/5xx and transient httpx errors with backoff; retries are per window, never per hour.
 - Cost: the Gemini Project has a **$100/mo cap**. An hour of audio ≈ 30 min wall-clock on Pro. Don't burn lessons on experiments — use the synthetic lesson or a single window.
 

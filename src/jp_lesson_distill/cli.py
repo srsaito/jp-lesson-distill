@@ -5,6 +5,7 @@ import re
 import sys
 from pathlib import Path
 
+from .gemini import STREAM_IDLE_TIMEOUT_S
 from .pipeline import Config, run
 from .validate import build, dump, play, report, reset
 
@@ -30,6 +31,10 @@ def main() -> None:
     p.add_argument("--window-attempts", type=int, default=2,
                    help="how many times to transcribe a window that fails the sanity gates "
                         "(1 = never retry; the least-bad attempt is kept either way)")
+    p.add_argument("--stream-timeout", type=float, default=STREAM_IDLE_TIMEOUT_S,
+                   help="seconds of silence before a streaming call is abandoned and re-rolled; "
+                        "this is a gap between chunks, not a budget for the whole response "
+                        f"(default: {STREAM_IDLE_TIMEOUT_S:.0f})")
 
     # distill label — build a blind listening kit for diarization ground truth (jld-dli)
     lab = sub.add_parser("label", help="sample lines and cut blind clips to label by ear")
@@ -88,7 +93,7 @@ def main() -> None:
             work_dir=args.work_dir, out_dir=args.out_dir,
             skip_pass_b=args.skip_pass_b, max_moments=args.max_moments,
             window_minutes=args.window_minutes, overlap_seconds=args.overlap_seconds,
-            window_attempts=args.window_attempts,
+            window_attempts=args.window_attempts, stream_timeout=args.stream_timeout,
         ))
     except KeyboardInterrupt:
         sys.exit(130)

@@ -8,3 +8,10 @@ __pycache__/
 .dolt/
 *.db
 .beads-credential-key
+
+# bd's pre-commit hook drops a stray duplicate of .beads/issues.jsonl here on every
+# commit made from a secondary checkout, then deletes it — and it FORCE-ADDS it past
+# this rule, so the rule only keeps it out of `git add -A`. Committing from such a
+# checkout needs `bd export -o .beads/issues.jsonl` and `git commit --no-verify`.
+# See jld-78z.
+/issues.jsonl
