@@ -23,6 +23,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from .labeling import MARKERS, marker_conflict
+
+# For messages only — derived so the text can never list a different set than the check uses.
+MARKER_LIST = "".join(f"「{m}」" for m, _ in MARKERS)
 from .models import Segment, fmt_ts, parse_ts
 
 # --- calibrated thresholds ---
@@ -199,8 +202,8 @@ def evaluate(segments: list[Segment], duration: float) -> WindowReport:
             # here asks whether speech went missing; this one asks whether it landed
             # on the right person, and nothing else in the pipeline does.
             n_cued < MARKER_MIN_N or agree / n_cued >= MARKER_WARN,
-            f"only {agree}/{n_cued} segments containing 「スティーブンさん」「奥さん」"
-            f"「先生」「妻」 are labelled the way the address form requires — diarization "
+            f"only {agree}/{n_cued} segments containing {MARKER_LIST} "
+            f"are labelled the way the address form requires — diarization "
             "may be wrong well beyond these lines; cut a listening kit with `distill label`",
             fatal=False,
         ),
@@ -237,7 +240,7 @@ def marker_verdict(segments: list[Segment]) -> str:
     """
     agree, total = marker_agreement(segments)
     if not total:
-        return ("no 「スティーブンさん」「奥さん」「先生」「妻」 lines in this lesson, so "
+        return (f"no {MARKER_LIST} lines in this lesson, so "
                 "diarization is unverified — normal for a drill-heavy hour")
     head = f"address forms {agree}/{total}"
     if total < MARKER_MIN_N:
