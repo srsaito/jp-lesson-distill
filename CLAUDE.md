@@ -25,7 +25,7 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 ## Running
 - `uv run distill run <recording> --date YYYYMMDD` — full pipeline. Stage outputs cache under `work/YYYYMMDD/`; re-runs skip completed stages (delete a stage file to redo it). Pass A windows the recording internally (`--window-minutes` / `--overlap-seconds`, ADR-0005) and caches each window as `transcript_w<NN>.json` — delete one to redo just that window.
 - Requires `GEMINI_API_KEY` in the environment. ffmpeg resolves from the `imageio-ffmpeg` wheel (no system install needed).
-- **After each lesson, archive it:** `uv run python scripts/archive_work.py`. `work/` exists on one laptop only, and Gemini output and blind labels can't be regenerated identically. The script copies every non-audio file to OneDrive next to the recording, at `日本語/Soso/Vol N/L##/distill-archive/<YYYYMMDD>/`, mirroring `work/`. **If `work/` is missing or empty, restore from there before re-running anything expensive.** See `docs/archive.md`.
+- **Every run archives itself to OneDrive** (`archive.py`, `docs/archive.md`). `work/` exists on one laptop only, and Gemini output and blind labels can't be regenerated identically. So at the end of every `distill run`, including one that fails partway, and after every `distill label --play` session, the lesson's non-audio files are copied next to its recording at `日本語/Soso/Vol N/L##/distill-archive/<YYYYMMDD>/`, mirroring `work/`. `--no-archive` turns it off for experiments; `distill archive [--date …] [--dry-run]` catches up by hand. It is warn-only: a missing OneDrive never fails a run. **If `work/` is missing or empty, restore from the archive before re-running anything expensive.**
 
 ## How this workstream is organized
 - **`hot.md`** — current state / where we left off. Snapshot, not append-log; update at end of session.
@@ -47,6 +47,7 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 | `quality.py` | per-window sanity gates on Pass A output + the address-form diarization canary | thresholds are calibrated against real transcripts, never guessed; re-check them if you change them |
 | `labeling.py` | sampling, blinding and scoring for diarization ground truth | pure functions; the listener must never see the model's label |
 | `validate.py` | `distill label` / `distill score` — cut clips, listen, score | offline once the clips exist; answers are saved after every keystroke |
+| `archive.py` | copies each lesson's non-audio outputs to OneDrive beside its recording; runs after every `distill run` and label session, and via `distill archive` | warn-only — archiving never fails a run; never archive audio; never put its contents in this public repo |
 
 ### Dev loop
 - `uv sync` once; `uv run distill run <rec> --date YYYYMMDD` to run. `--skip-pass-b` is the cheap dry run; `--work-dir` isolates experiments.

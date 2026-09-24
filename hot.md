@@ -6,7 +6,8 @@
 
 ## Where we left off (2026-09-24 — lesson data archived to OneDrive)
 - **`work/` was a single copy on one laptop** and holds things that can't be regenerated: every Gemini output (nondeterministic and billed) and the 41 blind diarization labels *with* utterance text. It is now archived next to each recording at `日本語/Soso/Vol N/L##/distill-archive/<YYYYMMDD>/`. That's 189 files for 23 lessons (8/17's labels verified byte-identical). Audio is left out because it's re-cut from the recording.
-- `scripts/archive_work.py` does it and is safe to re-run; **run it after every lesson**. Each date folder mirrors `work/`, so restoring is one `rsync` back over `work/`. `docs/archive.md` has the layout and the restore command.
+- **It's automatic now:** every `distill run` archives its lesson when it ends, even if a stage failed, and so does every `distill label --play` session. `distill archive` catches up by hand, and `--no-archive` skips it for experiments. Each date folder mirrors `work/`, so restoring is one `rsync` back over `work/`. `docs/archive.md` has the layout and the restore command.
+- **Blind labels from any listening kit are covered.** Answers live at `<work-dir>/<date>/labeling/items.jsonl`, and any file under `work/` whose path contains a lesson-date folder is archived as that lesson's. So a kit cut with any `--work-dir` under `work/` is found without anyone listing its folder. (The first version hard-coded three folder names and would have missed the next one.)
 - Correction to an earlier handoff: the old `jld-hc9-2-window-pass-a` worktree's `work/` was mostly *symlinks* into the main checkout's `work/`, so the listening kit and 8/17 audio were never at risk there. Only its `hc91-*` experiment runs were unique; they're now in the main `work/` and in the archive.
 
 ## Where we left off (2026-09-24 — Gemini 3.5 Transcribe trial: DON'T SWITCH)

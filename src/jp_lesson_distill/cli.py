@@ -5,6 +5,7 @@ import re
 import sys
 from pathlib import Path
 
+from .archive import archive, archive_lesson, main_work_dir
 from .gemini import (
     DEFAULT_MODEL,
     PASS_A_THINKING_LEVEL,
@@ -47,6 +48,9 @@ def main() -> None:
                    help="seconds of silence before a streaming call is abandoned and re-rolled; "
                         "this is a gap between chunks, not a budget for the whole response "
                         f"(default: {STREAM_IDLE_TIMEOUT_S:.0f})")
+    p.add_argument("--no-archive", action="store_true",
+                   help="don't copy this lesson's outputs to OneDrive when the run ends "
+                        "(for experiments; see docs/archive.md)")
 
     # distill label — build a blind listening kit for diarization ground truth (jld-dli)
     lab = sub.add_parser("label", help="sample lines and cut blind clips to label by ear")
@@ -77,11 +81,26 @@ def main() -> None:
                     help="a repaired transcript.json to compare against Pass A, paired (McNemar)")
     sc.add_argument("--dump", action="store_true", help="print the labelled truth as JSON")
 
+    # distill archive — normally automatic; this is for catching up by hand
+    ar = sub.add_parser("archive", help="copy lesson outputs to OneDrive next to each recording "
+                                        "(runs automatically after `distill run`)")
+    ar.add_argument("--date", nargs="*", help="only these lesson dates, YYYYMMDD (default: all)")
+    ar.add_argument("--work", type=Path, help="the work/ to archive (default: the main checkout's)")
+    ar.add_argument("--dry-run", action="store_true", help="say what would be copied, copy nothing")
+
     args = parser.parse_args()
-    if not re.fullmatch(r"\d{8}", args.date):
+    dates = (args.date or []) if args.command == "archive" else [args.date]
+    if not all(re.fullmatch(r"\d{8}", d) for d in dates):
         parser.error("--date must be YYYYMMDD")
 
     try:
+        if args.command == "archive":
+            done = archive(args.work or main_work_dir(), set(dates) or None, dry_run=args.dry_run)
+            print(f"{'would copy' if args.dry_run else 'copied'} {done.copied} files; "
+                  f"{done.unchanged} already archived and up to date")
+            if done.not_archived:
+                sys.exit(f"not archived (no lesson folder in OneDrive): {', '.join(done.not_archived)}")
+            return
         if args.command == "score":
             dump(args.date, args.work_dir) if args.dump else report(args.date, args.work_dir, args.against)
             return
@@ -96,6 +115,9 @@ def main() -> None:
                       script_path=args.script)
             if args.play:
                 play(args.date, args.work_dir)
+                # The answers are the irreplaceable part of a kit; don't leave them waiting
+                # for the next pipeline run to be copied.
+                archive_lesson(args.date, args.work_dir, args.recording)
             return
 
         if not args.recording.exists():
@@ -108,6 +130,7 @@ def main() -> None:
             window_attempts=args.window_attempts, stream_timeout=args.stream_timeout,
             pass_a_thinking=(None if args.pass_a_thinking == "model-default"
                              else args.pass_a_thinking.upper()),
+            archive=not args.no_archive,
         ))
     except KeyboardInterrupt:
         sys.exit(130)
