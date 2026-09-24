@@ -124,7 +124,8 @@ def test_the_good_run_clears_the_threshold():
         segments, duration = _load(d / f"transcript_w{i:02d}.json", d / "windows" / f"w{i:02d}.m4a")
         r = evaluate(segments, duration)
         agree, total = agree + r.marker_agree, total + r.marker_total
-    assert (agree, total) == (8, 9), "the run Steven's ears scored at 89%"
+    # 8/9 before スティーブさん became a marker (2026-09-24); its 3 new lines all agree.
+    assert (agree, total) == (11, 12), "the run Steven's ears scored at 89%"
 
 
 def test_the_bad_run_is_caught_here_and_nowhere_else():
@@ -133,7 +134,8 @@ def test_the_bad_run_is_caught_here_and_nowhere_else():
     segments, duration = _load(d / "transcript.json", d / "audio.m4a")
     report = evaluate(segments, duration)
     assert report.ok, "it passes coverage, dead-time, span and monotonicity"
-    assert (report.marker_agree, report.marker_total) == (1, 5)
+    # 1/5 before スティーブさん became a marker; the one new line agrees.
+    assert (report.marker_agree, report.marker_total) == (2, 6)
     assert "address-forms" in [c.name for c in report.warnings]
 
 
@@ -181,12 +183,17 @@ def test_the_run_verdict_is_calm_when_the_cues_agree():
 
 
 def test_the_two_real_runs_get_opposite_verdicts_over_the_whole_hour():
-    """The aggregate is the figure that carries weight: 8/9 against 3/8."""
+    """The aggregate is the figure that carries weight: 11/12 against 7/12.
+
+    8/9 against 3/8 before スティーブさん became a marker (2026-09-24). Its 7 new lines
+    (3 good, 4 bad) all agree — the teacher's short form was simply uncounted — and
+    neither verdict moves.
+    """
     good = WORK / "hc9-2-verify/20260817/transcript.json"
     if not good.exists():
         pytest.skip("fixture missing")
     g = Transcript.model_validate_json(good.read_text()).segments
-    assert marker_agreement(g) == (8, 9)
+    assert marker_agreement(g) == (11, 12)
     assert "consistent" in marker_verdict(g)
 
     ref = []
@@ -195,7 +202,7 @@ def test_the_two_real_runs_get_opposite_verdicts_over_the_whole_hour():
         if not p.exists():
             pytest.skip("fixture missing")
         ref += Transcript.model_validate_json(p.read_text()).segments
-    assert marker_agreement(ref) == (3, 8)
+    assert marker_agreement(ref) == (7, 12)
     assert "distill label" in marker_verdict(ref)
 
 

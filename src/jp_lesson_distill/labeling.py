@@ -54,8 +54,12 @@ TRUTH_VALUES = (*GRADED, *UNGRADED)
 # Address forms pin a speaker regardless of voice: only the teacher says 「スティーブンさん」
 # or 「奥さん」 (someone else's wife), only the student says 「先生」 as an address or
 # 「妻」 (his own wife). Sparse — about nine lines an hour — but decisive where they land.
+# 「スティーブさん」 too: Soso先生 uses the short form, and on 2026-09-23 it was the ONLY
+# address form in the hour (3 lines) — the check reported "no cues" while the labels were
+# flipped for the first 21 minutes. Not a bare 「スティーブ」: he may name himself.
 MARKERS: tuple[tuple[str, str], ...] = (
     ("スティーブン", "teacher"),
+    ("スティーブさん", "teacher"),
     ("先生", "student"),
     ("奥さん", "teacher"),
     ("妻", "student"),

@@ -37,6 +37,12 @@ def test_marker_conflict_fires_only_when_the_label_contradicts_the_address_form(
     assert marker_conflict(seg("05:00", "teacher", "スティーブンさんはどうですか？")) is None
 
 
+def test_short_form_steve_san_is_the_teacher_too():
+    # 2026-09-23: Soso先生 said スティーブさん three times and the check reported no cues.
+    assert marker_conflict(seg("09:30", "student", "スティーブさんはどうでしたか？"))
+    assert marker_conflict(seg("09:30", "teacher", "スティーブさんはどうでしたか？")) is None
+
+
 def test_own_wife_is_the_student_and_someone_elses_is_the_teacher():
     assert marker_conflict(seg("12:12", "teacher", "私はもう予定はありませんけど、妻が予定があります。"))
     assert marker_conflict(seg("10:29", "student", "なるほど、奥さんは仕事して、"))
