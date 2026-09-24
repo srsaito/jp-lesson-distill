@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import prompts
+from .archive import archive_lesson
 from .audio import clip_audio, duration_seconds, prep_audio, split_windows
 from .gemini import (
     DEFAULT_MODEL,
@@ -52,6 +53,8 @@ class Config:
     # Pass A only; None leaves the model's own default in place. Detect and Pass B are never
     # given a level — those two stages are where thinking earns its tokens.
     pass_a_thinking: str | None = PASS_A_THINKING_LEVEL
+    # Copy this lesson's non-audio outputs to OneDrive when the run ends (docs/archive.md).
+    archive: bool = True
 
     @property
     def lesson_date(self) -> str:
@@ -67,6 +70,20 @@ def _save(path: Path, obj) -> None:
 
 
 def run(cfg: Config) -> Path | None:
+    """Run every stage, then archive whatever the run produced — even if a stage failed.
+
+    The archive step sits in `finally` on purpose. A run that dies in window 3 has already
+    paid for windows 1 and 2, and those transcripts are exactly what a re-run cannot give
+    back; they are worth keeping most when something has gone wrong.
+    """
+    try:
+        return _run(cfg)
+    finally:
+        if cfg.archive:
+            archive_lesson(cfg.date, cfg.work_dir, cfg.recording)
+
+
+def _run(cfg: Config) -> Path | None:
     work = cfg.work_dir / cfg.date
     work.mkdir(parents=True, exist_ok=True)
     client = None  # created only if a Gemini stage actually runs

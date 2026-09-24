@@ -12,8 +12,10 @@ different jobs:
 
 ## What the archive keeps, and why only that
 
-`scripts/archive_work.py` copies every **non-audio** file for a lesson into the archive,
-next to that lesson's recording. Audio is left out on purpose: every audio file in `work/`
+`archive.py` copies every **non-audio** file for a lesson into the archive, next to that
+lesson's recording. A file belongs to a lesson when its path under `work/` contains that
+lesson's date folder. That covers `work/<date>/` and any `--work-dir` under `work/`, so a
+listening kit cut anywhere in `work/` is found without anyone listing its folder. Audio is left out on purpose: every audio file in `work/`
 (`audio.m4a`, `windows/`, `clips/`) is cut from the recording and can be cut again.
 
 What it keeps cannot be regenerated identically:
@@ -48,15 +50,29 @@ Each lesson date folder **mirrors `work/`**, so paths are identical on both side
 
 ## Using it
 
-```bash
-uv run python scripts/archive_work.py --dry-run          # what would be copied
-uv run python scripts/archive_work.py                    # archive every lesson in work/
-uv run python scripts/archive_work.py --date 20260930    # just one lesson
+**It runs by itself.** Every `distill run` archives its lesson when it ends, and every
+`distill label --play` session archives the answers when you stop. The run is archived
+**even if a stage failed**: a run that dies in window 3 has already paid for windows 1 and
+2, and those are what a re-run can't give back. The run uses the recording's own folder,
+so there's no lookup to get wrong. Archiving is warn-only, so a missing OneDrive (another
+machine, not mounted) prints a warning and never fails the run.
+
+```
+[archive] 20260923: 3 new of 13 files -> Soso/Vol 3/L16/distill-archive/20260923
 ```
 
-Run it after each lesson's pipeline run. It is safe to repeat: a file is copied only when
-it is missing from the archive or newer in `work/`. It works from a worktree too — it
-archives the **main** checkout's `work/`, which is where the data is.
+By hand, to catch up or to check:
+
+```bash
+uv run distill archive --dry-run          # what would be copied
+uv run distill archive                    # every lesson in work/
+uv run distill archive --date 20260930    # just one lesson
+uv run distill run … --no-archive         # an experiment you don't want kept
+```
+
+It is safe to repeat: a file is copied only when it is missing from the archive or newer in
+`work/`, so a re-labelled kit replaces the old answers. `distill archive` works from a
+worktree too, since it archives the **main** checkout's `work/`, where the data is.
 
 **To restore a lesson** (new machine, deleted `work/`), copy the date folder back over
 `work/` — the pipeline then treats every archived stage as cached and skips it:
