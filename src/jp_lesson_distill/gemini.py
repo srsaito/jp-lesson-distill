@@ -69,6 +69,28 @@ LOOP_MIN_REPEATS = 20    # consecutive repeats before we believe it
 # a real lesson has supplied the distribution.
 STREAM_IDLE_TIMEOUT_S = 300.0
 
+# --- how long the SERVER lets a whole call run (jld-hc9.7) ---
+#
+# The same scalar had a second meaning nobody had written down. The SDK also copies
+# HttpOptions.timeout into an `X-Server-Timeout` header, and Gemini enforces that as a
+# deadline on the WHOLE call — first byte plus every chunk after it. Past it the server
+# ends the stream with 504 DEADLINE_EXCEEDED, mid-output if it has to. Measured 2026-09-25
+# (scripts/probe_read_timeout.py): at a 30 s timeout a Pass A window whose first chunk came
+# at 28.8 s was cut at 30.07 s while chunks were arriving every 0.1–0.3 s; a text call at 15 s
+# was cut at 15.1 s with its longest gap at 11.8 s. Sending the header ourselves separates
+# the two: the same call with the header at 600 was not cut, and the CLIENT timeout then
+# fired on a genuine 15 s gap — so the per-gap reading above is right, it just was not the
+# whole story.
+#
+# So we send the header explicitly and the idle timeout means only what its name says.
+# Without this, tightening --stream-timeout (jld-hc9.3.3) would also cap every call's total
+# duration at the new value, and healthy calls already take up to 137 s end to end.
+#
+# 600 s is ~4x the slowest healthy call on record (137 s; a Pass A window at `medium` is
+# 60–100 s). A stall is still caught by the idle timeout long before this; the deadline only
+# ends a call that keeps streaming for ten minutes, which no healthy window does.
+CALL_DEADLINE_S = 600.0
+
 # --- which model, and how hard it is allowed to think (jld-hc9.1) ---
 #
 # PINNED, not an alias. `gemini-pro-latest` is a moving target: it served Gemini 2.5 Pro when
@@ -164,7 +186,8 @@ def _dotenv_key() -> str | None:
     return None
 
 
-def make_client(idle_timeout_s: float = STREAM_IDLE_TIMEOUT_S) -> genai.Client:
+def make_client(idle_timeout_s: float = STREAM_IDLE_TIMEOUT_S,
+                deadline_s: float = CALL_DEADLINE_S) -> genai.Client:
     key = _dotenv_key()
     if key:
         print("[gemini] using GEMINI_API_KEY from .env (overrides shell env)")
@@ -172,11 +195,16 @@ def make_client(idle_timeout_s: float = STREAM_IDLE_TIMEOUT_S) -> genai.Client:
         key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise SystemExit("GEMINI_API_KEY is not set (shell env or .env in the repo)")
-    print(f"[gemini] aborting any stream that goes quiet for {idle_timeout_s:.0f}s", flush=True)
+    print(f"[gemini] aborting any stream that goes quiet for {idle_timeout_s:.0f}s "
+          f"(server deadline {deadline_s:.0f}s per call)", flush=True)
     # explicit api_key so a stray GOOGLE_API_KEY in the shell can never win
     return genai.Client(
         api_key=key,
-        http_options=types.HttpOptions(timeout=int(idle_timeout_s * 1000)),
+        http_options=types.HttpOptions(
+            timeout=int(idle_timeout_s * 1000),
+            # the SDK only fills this in from `timeout` when it is absent (CALL_DEADLINE_S)
+            headers={"X-Server-Timeout": str(int(deadline_s))},
+        ),
     )
 
 
@@ -359,6 +387,13 @@ def _with_retry(fn, what: str, attempts: int = 4):
                   f"retry {n}/{attempts - 1}…", flush=True)
             time.sleep(5 * n)
         except genai_errors.APIError as e:
+            if getattr(e, "code", None) == 504 and n < attempts:
+                # The server ended the call at CALL_DEADLINE_S. Like a stall, the cure is a
+                # re-roll; unlike a rate limit, there is nothing to wait out.
+                print(f"[{what}] the server's per-call deadline expired (504), "
+                      f"retry {n}/{attempts - 1}…", flush=True)
+                time.sleep(5 * n)
+                continue
             if getattr(e, "code", None) not in RETRYABLE_CODES or n == attempts:
                 raise
             wait = 30 * n  # free-tier RPM windows are per-minute; back off generously

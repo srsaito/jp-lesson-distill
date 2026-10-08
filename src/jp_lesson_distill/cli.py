@@ -46,7 +46,8 @@ def main() -> None:
                         "model default")
     p.add_argument("--stream-timeout", type=float, default=STREAM_IDLE_TIMEOUT_S,
                    help="seconds of silence before a streaming call is abandoned and re-rolled; "
-                        "this is a gap between chunks, not a budget for the whole response "
+                        "this is a gap between chunks, not a budget for the whole response — "
+                        "the server's per-call deadline is set separately "
                         f"(default: {STREAM_IDLE_TIMEOUT_S:.0f})")
     p.add_argument("--no-archive", action="store_true",
                    help="don't copy this lesson's outputs to OneDrive when the run ends "
