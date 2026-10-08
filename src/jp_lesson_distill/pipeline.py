@@ -42,7 +42,7 @@ CLIP_PAD = 15.0  # seconds of context on each side of a candidate
 # on 10/5's clips: 15 healthy calls took 7–26 s end to end, and a stalled one sends nothing at
 # all — so 90 s is three times the slowest healthy call, against the 300 s Pass A needs.
 PASS_B_IDLE_TIMEOUT_S = 90.0
-PASS_B_GIVE_UP = 2# consecutive failed clips before Pass B stops trying the rest (jld-8rb)
+PASS_B_GIVE_UP = 2  # consecutive failed clips before Pass B stops trying the rest (jld-8rb)
 
 
 @dataclass
