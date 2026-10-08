@@ -92,19 +92,18 @@ def run(cfg: Config) -> Path | None:
 
 
 def _board(cfg: Config) -> list[BoardNote]:
-    """The board timeline, and what was typed on it for detect and Pass B to use.
+    """The board timeline, and the lines typed on it, for the moments to carry.
 
-    Warn-only, like the archive: a screen that could not be read (no video, not macOS, a
-    Gemini hiccup on a slide) costs the moments their board evidence, nothing more — the
-    run carries on exactly as an audio-only lesson would. `distill board` retries it alone.
+    Warn-only, like the archive: the moments are already emitted by the time this runs, and
+    a screen that could not be read (no video, not macOS, a Gemini hiccup on a slide) costs
+    them their board lines, nothing more. `distill board` retries it alone.
 
-    `--no-board` and `--skip-pass-b` do not read a screen (that is the slow part), but a
-    board already on disk is still used: it is free, and a cheap dry run of detect should
-    see what the real run will.
+    `--no-board` does not read a screen (that is the slow part), but a board already on disk
+    is still used: it is free.
     """
     cached = cfg.work_dir / cfg.date / "board" / "board.json"
     try:
-        if not cfg.board or cfg.skip_pass_b:
+        if not cfg.board:
             board = json.loads(cached.read_text()) if cached.exists() else None
         else:
             video = cfg.video or find_video(cfg.recording)
@@ -143,9 +142,6 @@ def _run(cfg: Config) -> Path | None:
 
     transcript = _pass_a(cfg, work, audio, total, get_client)
 
-    # board — before detect, which reads what was typed on the screen as evidence (ADR-0009)
-    notes = _board(cfg)
-
     # detect
     candidates_path = work / "candidates.json"
     if candidates_path.exists():
@@ -154,10 +150,6 @@ def _run(cfg: Config) -> Path | None:
         client = get_client()
         print("[detect] flagging candidate learning moments")
         prompt = prompts.DETECT.format(transcript=transcript.model_dump_json())
-        if notes:
-            print(f"[detect] with {len(notes)} board notes as evidence")
-            prompt += prompts.DETECT_BOARD.format(
-                board="\n".join(f"{fmt_ts(n.t)} {n.text}" for n in notes))
         cands: CandidateList = generate(client, cfg.model, [prompt], CandidateList, progress=True)
         _save(candidates_path, cands)
     cands = _load(candidates_path, CandidateList)
@@ -189,15 +181,14 @@ def _run(cfg: Config) -> Path | None:
             if not clip.exists():
                 clip_audio(audio, clip, t0 - CLIP_PAD, min(total, t1 + CLIP_PAD))
             print(f"[pass_b] {i}/{len(ordered)} re-listening {cand.t_start}-{cand.t_end} ({cand.type})")
-            near = _near(notes, t0, t1)
-            r: Relisten = _relisten(client, cfg.model, clip, cand, near)
+            r: Relisten = _relisten(client, cfg.model, clip, cand)
             if not r.keep:
                 print(f"[pass_b]   rejected: {r.explanation}")
                 continue
             moments.append(Moment(
                 id=f"m{i:02d}", t_start=t0, t_end=t1, type=r.type,
                 student_verbatim=r.student_verbatim, teacher_correction=r.teacher_correction,
-                explanation=r.explanation, confidence=r.confidence, board=near,
+                explanation=r.explanation, confidence=r.confidence,
             ))
         out = MomentsFile(
             lesson_date=cfg.lesson_date,
@@ -216,6 +207,16 @@ def _run(cfg: Config) -> Path | None:
     dest.write_text(out.model_dump_json(indent=2))
     _emit_transcript(cfg, transcript)
     print(f"[emit] {dest}")
+
+    # board — after the moments are out, because reading the screen takes 10–20 minutes. Then
+    # the moments are written once more, each with what went onto the screen around it (ADR-0009).
+    notes = _board(cfg)
+    if notes:
+        for m in out.moments:
+            m.board = _near(notes, m.t_start, m.t_end)
+        dest.write_text(out.model_dump_json(indent=2))
+        print(f"[emit] {dest} — {sum(bool(m.board) for m in out.moments)} of {len(out.moments)} "
+              "moments now carry board lines")
     return dest
 
 
@@ -406,9 +407,8 @@ def _near(notes: list[BoardNote], t0: float, t1: float) -> list[BoardNote]:
     return [n for n in notes if t0 - BOARD_BEFORE <= n.t <= t1 + BOARD_AFTER]
 
 
-def _relisten(client, model: str, clip: Path, cand: Candidate, near: list[BoardNote]) -> Relisten:
-    board = prompts.PASS_B_BOARD.format(board=" / ".join(n.text for n in near)) if near else ""
-    prompt = prompts.PASS_B.format(type=cand.type, rationale=cand.rationale, excerpt=cand.excerpt, board=board)
+def _relisten(client, model: str, clip: Path, cand: Candidate) -> Relisten:
+    prompt = prompts.PASS_B.format(type=cand.type, rationale=cand.rationale, excerpt=cand.excerpt)
     return generate(client, model, [audio_part(clip), prompt], Relisten)
 
 

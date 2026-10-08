@@ -97,7 +97,7 @@ def test_the_video_is_found_beside_the_audio(tmp_path):
     assert find_video(odd) == Path(tmp_path / "Soso_20260924_class_video.mp4")
 
 
-# --- the board as evidence for detect and Pass B (ADR-0009) ---
+# --- board lines on the moments (ADR-0009) ---
 
 def test_notes_take_their_time_from_vision_and_their_text_from_gemini():
     from jp_lesson_distill.board import notes
@@ -124,9 +124,18 @@ def test_board_lines_near_an_exchange_look_further_after_it_than_before():
     assert [n.t for n in _near(notes, 100, 110)] == [75, 100, 180, 200]
 
 
-def test_a_lesson_without_a_board_sends_the_same_prompts_as_before():
+def test_the_board_is_kept_out_of_the_prompts():
+    """Measured 2026-10-08 on two lessons: showing detect and Pass B the board found no new
+    moment and changed no correction (ADR-0009). Putting it back needs a new measurement."""
     from jp_lesson_distill import prompts
 
-    plain = prompts.PASS_B.format(type="correction", rationale="r", excerpt="e", board="")
-    assert plain.count("shared screen") == 0
-    assert "{board}" not in prompts.DETECT  # the board block is appended, never a hole in DETECT
+    for prompt in (prompts.PASS_A, prompts.DETECT, prompts.PASS_B):
+        assert "board" not in prompt.lower() and "shared screen" not in prompt.lower()
+
+
+def test_an_old_moments_file_without_board_lines_still_loads():
+    from jp_lesson_distill.models import Moment
+
+    m = Moment(id="m01", t_start=1, t_end=2, type="correction", student_verbatim="x",
+               explanation="y", confidence=0.9)
+    assert m.board == []
