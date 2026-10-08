@@ -15,10 +15,12 @@ from __future__ import annotations
 import httpx
 import pytest
 from google.genai import _api_client as genai_api
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from jp_lesson_distill import gemini
 from jp_lesson_distill.gemini import (
+    CALL_DEADLINE_S,
     LOOP_MIN_REPEATS,
     STREAM_IDLE_TIMEOUT_S,
     RepetitionLoop,
@@ -117,6 +119,58 @@ def test_client_carries_the_configured_idle_timeout(monkeypatch):
 
 def test_the_default_is_far_below_the_thirty_minutes_it_replaced():
     assert STREAM_IDLE_TIMEOUT_S < 30 * 60
+
+
+# --- the server-side deadline hiding in the same scalar (jld-hc9.7) -------------
+
+def test_left_alone_the_sdk_turns_the_idle_timeout_into_a_server_deadline():
+    """Why --stream-timeout used to cap each call's TOTAL duration too: Gemini enforces
+    X-Server-Timeout on the whole call and ends it with 504 DEADLINE_EXCEEDED (measured
+    2026-09-25, scripts/probe_read_timeout.py)."""
+    headers: dict[str, str] = {}
+    genai_api.populate_server_timeout_header(headers, 300.0)
+    assert headers == {"X-Server-Timeout": "300"}
+
+
+def test_a_deadline_we_set_ourselves_is_left_alone():
+    """The whole fix depends on this: the SDK only fills the header in when it is absent."""
+    headers = {"X-Server-Timeout": "600"}
+    genai_api.populate_server_timeout_header(headers, 30.0)
+    assert headers == {"X-Server-Timeout": "600"}
+
+
+def test_client_sends_its_own_deadline_independent_of_the_idle_timeout(monkeypatch):
+    monkeypatch.setattr(gemini, "_dotenv_key", lambda: None)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-a-real-one")
+    options = make_client(120.0)._api_client._http_options
+    assert genai_api.get_timeout_in_seconds(options.timeout) == 120.0
+    assert options.headers["X-Server-Timeout"] == str(int(CALL_DEADLINE_S))
+
+
+def test_the_deadline_clears_the_slowest_healthy_call_with_room_to_spare():
+    """137 s end to end (first byte 116.8 s) is the slowest healthy call on record, a detect pass."""
+    assert CALL_DEADLINE_S >= 4 * 137
+    assert CALL_DEADLINE_S > STREAM_IDLE_TIMEOUT_S
+
+
+def test_a_deadline_504_mid_stream_is_rerolled(capsys):
+    """It used to be a non-retryable APIError, so one slow call ended the whole run."""
+    def deadline_then_fine(**kwargs):
+        client.models.calls += 1
+        if client.models.calls == 1:
+            def cut():
+                yield FakeChunk(VALID[:20])
+                raise genai_errors.ServerError(504, {"error": {
+                    "code": 504, "message": "Deadline expired before operation could complete.",
+                    "status": "DEADLINE_EXCEEDED"}})
+            return cut()
+        return iter([FakeChunk(VALID)])
+
+    client = FakeClient([])
+    client.models.generate_content_stream = deadline_then_fine
+    out = generate(client, "fake-model", ["prompt"], Transcript)
+    assert out.segments[0].text == "はい。"
+    assert "deadline expired" in capsys.readouterr().out
 
 
 # --- what generate() does with a stream ---------------------------------------
