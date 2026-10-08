@@ -379,13 +379,15 @@ def notes(board: dict) -> list[dict]:
         if sc.get("kind") == "web":
             continue
         clean = [*sc.get("notes", []), *sc.get("handwritten", []), *(l["text"] for l in sc.get("slide", []))]
-        for line in sc["typed"]:
+        seen = set()  # Vision can time one line twice (he retyped or moved it); the first time is the one
+        for line in sorted(sc["typed"], key=lambda l: l["t"]):
             squeezed = re.sub(r"\s", "", line["text"])
             best = max(clean, key=lambda c: SequenceMatcher(None, squeezed, re.sub(r"\s", "", c)).ratio(), default=None)
-            if best and SequenceMatcher(None, squeezed, re.sub(r"\s", "", best)).ratio() >= 0.6:
+            if not (best and SequenceMatcher(None, squeezed, re.sub(r"\s", "", best)).ratio() >= 0.6):
+                best = line["text"]
+            if best not in seen:
+                seen.add(best)
                 out.append({"t": line["t"], "text": best})
-            else:
-                out.append({"t": line["t"], "text": line["text"]})
     return sorted(out, key=lambda n: n["t"])
 
 
