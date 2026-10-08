@@ -59,7 +59,7 @@ native Japanese speaker) and "student" (Steven, native English speaker learning 
 The clip was flagged as a possible learning moment:
 - suspected type: {type}
 - rationale: {rationale}
-- rough transcript of the region (may be WRONG — trust the audio over this text): {excerpt}
+- rough transcript of the region (may be WRONG — trust the audio over this text): {excerpt}{board}
 
 Listen carefully, then report:
 1. keep — false if this is NOT actually a learning moment (transcription artifact, small talk, etc.).
@@ -83,3 +83,33 @@ font or colour from the textbook.
 - kind = "handwritten": pen strokes — written words, circled choices (give the circled text), arrows \
 with labels.
 - Leave out webcam tiles, people's name labels, and window or browser chrome."""
+
+
+# Appended to DETECT when the lesson has a board timeline (ADR-0009).
+DETECT_BOARD = """
+
+BOARD NOTES: lines the teacher typed or wrote on the shared screen during this lesson, each with the \
+time it first appeared. Typing trails the speech it answers by a few seconds to a minute or so, and \
+lines typed in one burst can share a time.
+
+Use them as evidence about the STUDENT's Japanese:
+- A board line that restates something the student said, in corrected or more natural form, marks a \
+"correction" even if the teacher never said the correction aloud. Find the student's original \
+utterance in the transcript and report that exchange, with t_start at the student's utterance.
+- A board line that explains a contrast (two similar words, two forms, a particle) usually answers a \
+mistake or a question a moment earlier. Look there.
+- Do NOT report a moment only because a word or sentence is on the board. Board content reaches the \
+student's written notes anyway; it matters here only when it shows what the student got wrong or \
+struggled with.
+- The transcript remains the record of what was SAID. Board text is what was WRITTEN, and a few \
+characters may be misread.
+
+When a board line supports a candidate, quote it in the rationale.
+
+BOARD NOTES (MM:SS text):
+{board}"""
+
+# One line of PASS_B's context when something was typed near the clip (ADR-0009).
+PASS_B_BOARD = """
+- on the shared screen around this time the teacher wrote (often the corrected form — it is what HE \
+wrote, never evidence of what the student said): {board}"""

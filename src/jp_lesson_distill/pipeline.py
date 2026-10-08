@@ -11,6 +11,7 @@ from pathlib import Path
 from . import prompts
 from .archive import archive_lesson
 from .board import find_video, run_board
+from .board import notes as board_notes
 from .audio import clip_audio, duration_seconds, prep_audio, split_windows
 from .gemini import (
     DEFAULT_MODEL,
@@ -23,6 +24,7 @@ from .gemini import (
     upload_audio,
 )
 from .models import (
+    BoardNote,
     Candidate,
     CandidateList,
     Moment,
@@ -36,6 +38,7 @@ from .models import (
 from .quality import WindowReport, evaluate, marker_verdict
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
+BOARD_BEFORE, BOARD_AFTER = 30.0, 90.0  # seconds: typing trails the speech it answers (ADR-0009)
 
 
 @dataclass
@@ -82,32 +85,39 @@ def run(cfg: Config) -> Path | None:
     back; they are worth keeping most when something has gone wrong.
     """
     try:
-        result = _run(cfg)
-        if cfg.board and not cfg.skip_pass_b:
-            _board(cfg)
-        return result
+        return _run(cfg)
     finally:
         if cfg.archive:
             archive_lesson(cfg.date, cfg.work_dir, cfg.recording)
 
 
-def _board(cfg: Config) -> None:
-    """The board timeline, after the moments and never at their expense.
+def _board(cfg: Config) -> list[BoardNote]:
+    """The board timeline, and what was typed on it for detect and Pass B to use.
 
-    Warn-only, like the archive: the moments are already emitted by the time this runs, and
-    a screen that could not be read (no video, not macOS, a Gemini hiccup on a slide) is no
-    reason to report the lesson as failed. `distill board` runs it again by itself.
+    Warn-only, like the archive: a screen that could not be read (no video, not macOS, a
+    Gemini hiccup on a slide) costs the moments their board evidence, nothing more — the
+    run carries on exactly as an audio-only lesson would. `distill board` retries it alone.
+
+    `--no-board` and `--skip-pass-b` do not read a screen (that is the slow part), but a
+    board already on disk is still used: it is free, and a cheap dry run of detect should
+    see what the real run will.
     """
-    video = cfg.video or find_video(cfg.recording)
-    if video is None:
-        print(f"[board] no video beside {cfg.recording.name} — no board timeline "
-              "(pass --video, or run `distill board <video> --date …`)")
-        return
+    cached = cfg.work_dir / cfg.date / "board" / "board.json"
     try:
-        run_board(video, cfg.date, cfg.work_dir, cfg.out_dir)
+        if not cfg.board or cfg.skip_pass_b:
+            board = json.loads(cached.read_text()) if cached.exists() else None
+        else:
+            video = cfg.video or find_video(cfg.recording)
+            if video is None:
+                print(f"[board] no video beside {cfg.recording.name} — no board timeline "
+                      "(pass --video, or run `distill board <video> --date …`)")
+                return []
+            board = run_board(video, cfg.date, cfg.work_dir, cfg.out_dir)
+        return [BoardNote(**n) for n in board_notes(board)] if board else []
     except Exception as exc:  # noqa: BLE001 — see the docstring
-        print(f"[board] WARNING: board timeline failed ({type(exc).__name__}: {exc}); the moments "
-              f"are unaffected. Retry with `distill board {video} --date {cfg.date}`")
+        print(f"[board] WARNING: board timeline failed ({type(exc).__name__}: {exc}); carrying on "
+              f"without it. Retry with `distill board <video> --date {cfg.date}`")
+        return []
 
 
 def _run(cfg: Config) -> Path | None:
@@ -133,6 +143,9 @@ def _run(cfg: Config) -> Path | None:
 
     transcript = _pass_a(cfg, work, audio, total, get_client)
 
+    # board — before detect, which reads what was typed on the screen as evidence (ADR-0009)
+    notes = _board(cfg)
+
     # detect
     candidates_path = work / "candidates.json"
     if candidates_path.exists():
@@ -141,6 +154,10 @@ def _run(cfg: Config) -> Path | None:
         client = get_client()
         print("[detect] flagging candidate learning moments")
         prompt = prompts.DETECT.format(transcript=transcript.model_dump_json())
+        if notes:
+            print(f"[detect] with {len(notes)} board notes as evidence")
+            prompt += prompts.DETECT_BOARD.format(
+                board="\n".join(f"{fmt_ts(n.t)} {n.text}" for n in notes))
         cands: CandidateList = generate(client, cfg.model, [prompt], CandidateList, progress=True)
         _save(candidates_path, cands)
     cands = _load(candidates_path, CandidateList)
@@ -172,14 +189,15 @@ def _run(cfg: Config) -> Path | None:
             if not clip.exists():
                 clip_audio(audio, clip, t0 - CLIP_PAD, min(total, t1 + CLIP_PAD))
             print(f"[pass_b] {i}/{len(ordered)} re-listening {cand.t_start}-{cand.t_end} ({cand.type})")
-            r: Relisten = _relisten(client, cfg.model, clip, cand)
+            near = _near(notes, t0, t1)
+            r: Relisten = _relisten(client, cfg.model, clip, cand, near)
             if not r.keep:
                 print(f"[pass_b]   rejected: {r.explanation}")
                 continue
             moments.append(Moment(
                 id=f"m{i:02d}", t_start=t0, t_end=t1, type=r.type,
                 student_verbatim=r.student_verbatim, teacher_correction=r.teacher_correction,
-                explanation=r.explanation, confidence=r.confidence,
+                explanation=r.explanation, confidence=r.confidence, board=near,
             ))
         out = MomentsFile(
             lesson_date=cfg.lesson_date,
@@ -383,8 +401,14 @@ def _norm(text: str) -> str:
     return "".join(c for c in text if c not in " \t\u3000、。，．,.！？!?「」『』…")
 
 
-def _relisten(client, model: str, clip: Path, cand: Candidate) -> Relisten:
-    prompt = prompts.PASS_B.format(type=cand.type, rationale=cand.rationale, excerpt=cand.excerpt)
+def _near(notes: list[BoardNote], t0: float, t1: float) -> list[BoardNote]:
+    """Board lines that belong with an exchange: typing trails speech, so look further after than before."""
+    return [n for n in notes if t0 - BOARD_BEFORE <= n.t <= t1 + BOARD_AFTER]
+
+
+def _relisten(client, model: str, clip: Path, cand: Candidate, near: list[BoardNote]) -> Relisten:
+    board = prompts.PASS_B_BOARD.format(board=" / ".join(n.text for n in near)) if near else ""
+    prompt = prompts.PASS_B.format(type=cand.type, rationale=cand.rationale, excerpt=cand.excerpt, board=board)
     return generate(client, model, [audio_part(clip), prompt], Relisten)
 
 

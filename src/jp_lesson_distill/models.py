@@ -69,6 +69,12 @@ class Relisten(BaseModel):
 
 # --- Contract output (ADR-0003) ---
 
+class BoardNote(BaseModel):
+    """A line the teacher typed or wrote on the shared screen (board timeline, ADR-0008)."""
+    t: float = Field(description="seconds into the recording when the line first appeared")
+    text: str
+
+
 class Moment(BaseModel):
     id: str
     t_start: float
@@ -78,6 +84,9 @@ class Moment(BaseModel):
     teacher_correction: Optional[str] = None
     explanation: str
     confidence: float
+    # What went onto the shared screen around this moment (ADR-0009). Empty when the lesson
+    # has no video or nothing was typed nearby — never a reason to doubt the moment.
+    board: list[BoardNote] = []
 
 
 class MomentsFile(BaseModel):

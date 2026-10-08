@@ -95,3 +95,38 @@ def test_the_video_is_found_beside_the_audio(tmp_path):
     assert find_video(odd) is None
     (tmp_path / "Soso_20260924_class_video.mp4").touch()
     assert find_video(odd) == Path(tmp_path / "Soso_20260924_class_video.mp4")
+
+
+# --- the board as evidence for detect and Pass B (ADR-0009) ---
+
+def test_notes_take_their_time_from_vision_and_their_text_from_gemini():
+    from jp_lesson_distill.board import notes
+
+    board = {"scenes": [
+        {"typed": [{"t": 1808, "text": "お茶母さん"}, {"t": 1331, "text": "つけなおす"}],
+         "notes": ["つけなおす", "restart"], "handwritten": ["お義母さん", "つま"], "slide": []},
+        {"kind": "web", "typed": [], "slide": []},
+        {"typed": [{"t": 2400, "text": "店が開いているかどうか）"}], "slide": [{"text": "会話を聞きましょう。", "red": False}]},
+    ]}
+    assert notes(board) == [
+        {"t": 1331, "text": "つけなおす"},
+        {"t": 1808, "text": "お義母さん"},            # Vision's misreading replaced
+        {"t": 2400, "text": "店が開いているかどうか）"},  # nothing close enough: Vision's text stands
+    ]
+
+
+def test_board_lines_near_an_exchange_look_further_after_it_than_before():
+    from jp_lesson_distill.models import BoardNote
+    from jp_lesson_distill.pipeline import _near
+
+    notes = [BoardNote(t=t, text=str(t)) for t in (60, 75, 100, 180, 200)]
+    # an exchange at 100-110 s: 30 s back, 90 s on — typing trails the speech it answers
+    assert [n.t for n in _near(notes, 100, 110)] == [75, 100, 180, 200]
+
+
+def test_a_lesson_without_a_board_sends_the_same_prompts_as_before():
+    from jp_lesson_distill import prompts
+
+    plain = prompts.PASS_B.format(type="correction", rationale="r", excerpt="e", board="")
+    assert plain.count("shared screen") == 0
+    assert "{board}" not in prompts.DETECT  # the board block is appended, never a hole in DETECT
