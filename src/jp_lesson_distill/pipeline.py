@@ -38,7 +38,11 @@ from .models import (
 from .quality import WindowReport, evaluate, marker_verdict
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
-PASS_B_GIVE_UP = 2  # consecutive failed clips before Pass B stops trying the rest (jld-8rb)
+# Seconds of silence before a re-listen call is abandoned and re-rolled. Measured 2026-10-08
+# on 10/5's clips: 15 healthy calls took 7–26 s end to end, and a stalled one sends nothing at
+# all — so 90 s is three times the slowest healthy call, against the 300 s Pass A needs.
+PASS_B_IDLE_TIMEOUT_S = 90.0
+PASS_B_GIVE_UP = 2# consecutive failed clips before Pass B stops trying the rest (jld-8rb)
 
 
 @dataclass
@@ -168,7 +172,9 @@ def _run(cfg: Config) -> Path | None:
     if moments_path.exists():
         print(f"[pass_b] cached: {moments_path}")
     else:
-        client = get_client()
+        # Its own client: a re-listen answers in seconds, so it should not wait as long as a
+        # twenty-minute Pass A window does before a silent call is given up on.
+        client = make_client(min(cfg.stream_timeout, PASS_B_IDLE_TIMEOUT_S))
         clips_dir = work / "clips"
         clips_dir.mkdir(exist_ok=True)
         # One file per clip (jld-8rb). moments.json is only written when every clip is in, so
@@ -193,7 +199,15 @@ def _run(cfg: Config) -> Path | None:
                     failed.append(f"{i} ({cand.t_start}, not tried)")
                     continue
                 try:
-                    r = _relisten(client, cfg.model, clip, cand)
+                    try:
+                        r = _relisten(client, cfg.model, clip, cand)
+                    except CALL_FAILED as exc:
+                        # The stall is tied to thinking: the clip that went silent eight times
+                        # running at the model's default answered in 3 s at LOW (2026-10-08).
+                        # A re-listen with less thinking beats a lesson with no moments.
+                        print(f"[pass_b]   no answer after retries ({type(exc).__name__}); "
+                              "one more try with thinking turned down", flush=True)
+                        r = _relisten(client, cfg.model, clip, cand, thinking_level="LOW")
                 except CALL_FAILED as exc:
                     # Its retries are spent. One bad clip is no reason to drop the others, which
                     # are independent of it. Two in a row is the network or the service, and each
@@ -424,9 +438,9 @@ def _norm(text: str) -> str:
     return "".join(c for c in text if c not in " \t\u3000、。，．,.！？!?「」『』…")
 
 
-def _relisten(client, model: str, clip: Path, cand: Candidate) -> Relisten:
+def _relisten(client, model: str, clip: Path, cand: Candidate, thinking_level: str | None = None) -> Relisten:
     prompt = prompts.PASS_B.format(type=cand.type, rationale=cand.rationale, excerpt=cand.excerpt)
-    return generate(client, model, [audio_part(clip), prompt], Relisten)
+    return generate(client, model, [audio_part(clip), prompt], Relisten, thinking_level=thinking_level)
 
 
 def _emit_transcript(cfg: Config, transcript: Transcript) -> None:
