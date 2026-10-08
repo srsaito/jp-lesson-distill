@@ -95,3 +95,47 @@ def test_the_video_is_found_beside_the_audio(tmp_path):
     assert find_video(odd) is None
     (tmp_path / "Soso_20260924_class_video.mp4").touch()
     assert find_video(odd) == Path(tmp_path / "Soso_20260924_class_video.mp4")
+
+
+# --- board lines on the moments (ADR-0009) ---
+
+def test_notes_take_their_time_from_vision_and_their_text_from_gemini():
+    from jp_lesson_distill.board import notes
+
+    board = {"scenes": [
+        {"typed": [{"t": 1808, "text": "お茶母さん"}, {"t": 1331, "text": "つけなおす"}],
+         "notes": ["つけなおす", "restart"], "handwritten": ["お義母さん", "つま"], "slide": []},
+        {"kind": "web", "typed": [], "slide": []},
+        {"typed": [{"t": 2400, "text": "店が開いているかどうか）"}], "slide": [{"text": "会話を聞きましょう。", "red": False}]},
+    ]}
+    assert notes(board) == [
+        {"t": 1331, "text": "つけなおす"},
+        {"t": 1808, "text": "お義母さん"},            # Vision's misreading replaced
+        {"t": 2400, "text": "店が開いているかどうか）"},  # nothing close enough: Vision's text stands
+    ]
+
+
+def test_board_lines_near_an_exchange_look_further_after_it_than_before():
+    from jp_lesson_distill.models import BoardNote
+    from jp_lesson_distill.pipeline import _near
+
+    notes = [BoardNote(t=t, text=str(t)) for t in (60, 75, 100, 180, 200)]
+    # an exchange at 100-110 s: 30 s back, 90 s on — typing trails the speech it answers
+    assert [n.t for n in _near(notes, 100, 110)] == [75, 100, 180, 200]
+
+
+def test_the_board_is_kept_out_of_the_prompts():
+    """Measured 2026-10-08 on two lessons: showing detect and Pass B the board found no new
+    moment and changed no correction (ADR-0009). Putting it back needs a new measurement."""
+    from jp_lesson_distill import prompts
+
+    for prompt in (prompts.PASS_A, prompts.DETECT, prompts.PASS_B):
+        assert "board" not in prompt.lower() and "shared screen" not in prompt.lower()
+
+
+def test_an_old_moments_file_without_board_lines_still_loads():
+    from jp_lesson_distill.models import Moment
+
+    m = Moment(id="m01", t_start=1, t_end=2, type="correction", student_verbatim="x",
+               explanation="y", confidence=0.9)
+    assert m.board == []

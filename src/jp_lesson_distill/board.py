@@ -367,6 +367,30 @@ def build(date: str, work_dir: Path, min_seen: int = 2, use_gemini: bool = False
     return board
 
 
+def notes(board: dict) -> list[dict]:
+    """Every line added to a slide during class, in time order: `{"t": seconds, "text": …}`.
+
+    This is what detect and Pass B are shown. The time comes from Vision, which saw the
+    line appear; where Gemini read the same line off the slide's final frame its text is
+    used instead, because Vision misreads characters (お義母さん came out お茶母さん).
+    """
+    out = []
+    for sc in board["scenes"]:
+        if sc.get("kind") == "web":
+            continue
+        clean = [*sc.get("notes", []), *sc.get("handwritten", []), *(l["text"] for l in sc.get("slide", []))]
+        seen = set()  # Vision can time one line twice (he retyped or moved it); the first time is the one
+        for line in sorted(sc["typed"], key=lambda l: l["t"]):
+            squeezed = re.sub(r"\s", "", line["text"])
+            best = max(clean, key=lambda c: SequenceMatcher(None, squeezed, re.sub(r"\s", "", c)).ratio(), default=None)
+            if not (best and SequenceMatcher(None, squeezed, re.sub(r"\s", "", best)).ratio() >= 0.6):
+                best = line["text"]
+            if best not in seen:
+                seen.add(best)
+                out.append({"t": line["t"], "text": best})
+    return sorted(out, key=lambda n: n["t"])
+
+
 def find_video(recording: Path) -> Path | None:
     """The lesson's video: the recording itself, or `…_class_video.mp4` beside `…_class_audio.m4a`."""
     if recording.suffix.lower() in VIDEO_SUFFIXES:

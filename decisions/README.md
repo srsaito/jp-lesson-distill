@@ -12,3 +12,4 @@ Architecture Decision Records for jp-lesson-distill. One decision per file, `NNN
 | [[0006-pin-the-model]] | The default model is a pinned id, not a `-latest` alias | Accepted |
 | [[0007-pass-a-thinking-level]] | Pass A sends `thinking_level=medium`; detect and Pass B send none | Accepted |
 | [[0008-board-timeline]] | The shared screen is read into a board timeline that lands beside `moments.json` | Accepted |
+| [[0009-board-lines-on-moments]] | Each moment carries the board lines near it; the board is not shown to detect or Pass B (measured: no new moments) | Accepted |

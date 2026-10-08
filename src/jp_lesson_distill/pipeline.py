@@ -12,6 +12,7 @@ from pathlib import Path
 from . import prompts
 from .archive import archive_lesson
 from .board import find_video, run_board
+from .board import notes as board_notes
 from .audio import clip_audio, duration_seconds, prep_audio, split_windows
 from .gemini import (
     CALL_FAILED,
@@ -25,6 +26,7 @@ from .gemini import (
     upload_audio,
 )
 from .models import (
+    BoardNote,
     Candidate,
     CandidateList,
     Moment,
@@ -38,6 +40,7 @@ from .models import (
 from .quality import WindowReport, evaluate, marker_verdict
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
+BOARD_BEFORE, BOARD_AFTER = 30.0, 90.0  # seconds: typing trails the speech it answers (ADR-0009)
 # Seconds of silence before a re-listen call is abandoned and re-rolled. Measured 2026-10-08
 # on 10/5's clips: 15 healthy calls took 7–26 s end to end, and a stalled one sends nothing at
 # all — so 90 s is three times the slowest healthy call, against the 300 s Pass A needs.
@@ -89,32 +92,38 @@ def run(cfg: Config) -> Path | None:
     back; they are worth keeping most when something has gone wrong.
     """
     try:
-        result = _run(cfg)
-        if cfg.board and not cfg.skip_pass_b:
-            _board(cfg)
-        return result
+        return _run(cfg)
     finally:
         if cfg.archive:
             archive_lesson(cfg.date, cfg.work_dir, cfg.recording)
 
 
-def _board(cfg: Config) -> None:
-    """The board timeline, after the moments and never at their expense.
+def _board(cfg: Config) -> list[BoardNote]:
+    """The board timeline, and the lines typed on it, for the moments to carry.
 
     Warn-only, like the archive: the moments are already emitted by the time this runs, and
-    a screen that could not be read (no video, not macOS, a Gemini hiccup on a slide) is no
-    reason to report the lesson as failed. `distill board` runs it again by itself.
+    a screen that could not be read (no video, not macOS, a Gemini hiccup on a slide) costs
+    them their board lines, nothing more. `distill board` retries it alone.
+
+    `--no-board` does not read a screen (that is the slow part), but a board already on disk
+    is still used: it is free.
     """
-    video = cfg.video or find_video(cfg.recording)
-    if video is None:
-        print(f"[board] no video beside {cfg.recording.name} — no board timeline "
-              "(pass --video, or run `distill board <video> --date …`)")
-        return
+    cached = cfg.work_dir / cfg.date / "board" / "board.json"
     try:
-        run_board(video, cfg.date, cfg.work_dir, cfg.out_dir)
+        if not cfg.board:
+            board = json.loads(cached.read_text()) if cached.exists() else None
+        else:
+            video = cfg.video or find_video(cfg.recording)
+            if video is None:
+                print(f"[board] no video beside {cfg.recording.name} — no board timeline "
+                      "(pass --video, or run `distill board <video> --date …`)")
+                return []
+            board = run_board(video, cfg.date, cfg.work_dir, cfg.out_dir)
+        return [BoardNote(**n) for n in board_notes(board)] if board else []
     except Exception as exc:  # noqa: BLE001 — see the docstring
-        print(f"[board] WARNING: board timeline failed ({type(exc).__name__}: {exc}); the moments "
-              f"are unaffected. Retry with `distill board {video} --date {cfg.date}`")
+        print(f"[board] WARNING: board timeline failed ({type(exc).__name__}: {exc}); carrying on "
+              f"without it. Retry with `distill board <video> --date {cfg.date}`")
+        return []
 
 
 def _run(cfg: Config) -> Path | None:
@@ -253,6 +262,16 @@ def _run(cfg: Config) -> Path | None:
     dest.write_text(out.model_dump_json(indent=2))
     _emit_transcript(cfg, transcript)
     print(f"[emit] {dest}")
+
+    # board — after the moments are out, because reading the screen takes 10–20 minutes. Then
+    # the moments are written once more, each with what went onto the screen around it (ADR-0009).
+    notes = _board(cfg)
+    if notes:
+        for m in out.moments:
+            m.board = _near(notes, m.t_start, m.t_end)
+        dest.write_text(out.model_dump_json(indent=2))
+        print(f"[emit] {dest} — {sum(bool(m.board) for m in out.moments)} of {len(out.moments)} "
+              "moments now carry board lines")
     return dest
 
 
@@ -436,6 +455,11 @@ def _drop_seam_duplicates(kept: list[tuple[float, Segment]], overlap_s: float) -
 
 def _norm(text: str) -> str:
     return "".join(c for c in text if c not in " \t\u3000、。，．,.！？!?「」『』…")
+
+
+def _near(notes: list[BoardNote], t0: float, t1: float) -> list[BoardNote]:
+    """Board lines that belong with an exchange: typing trails speech, so look further after than before."""
+    return [n for n in notes if t0 - BOARD_BEFORE <= n.t <= t1 + BOARD_AFTER]
 
 
 def _relisten(client, model: str, clip: Path, cand: Candidate, thinking_level: str | None = None) -> Relisten:
