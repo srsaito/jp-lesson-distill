@@ -29,12 +29,15 @@ def lesson(tmp_path, monkeypatch, n=5):
                                  out_dir=tmp_path / "out", archive=False, board=False)
 
 
-def relisten(fail_on=()):
+def relisten(fail_on=(), low_answers=False):
+    """`calls` lists the ordinary attempts; a clip in `fail_on` also fails its LOW retry
+    unless `low_answers`."""
     calls = []
 
-    def fake(client, model, clip, cand):
-        calls.append(clip.stem)
-        if clip.stem in fail_on:
+    def fake(client, model, clip, cand, thinking_level=None):
+        if thinking_level is None:
+            calls.append(clip.stem)
+        if clip.stem in fail_on and not (thinking_level == "LOW" and low_answers):
             raise httpx.ReadTimeout("the stream went quiet")
         return Relisten(keep=True, type="correction", student_verbatim=clip.stem,
                         teacher_correction="y", explanation="z", confidence=0.9)
@@ -78,10 +81,38 @@ def test_two_failures_in_a_row_stop_the_rest_from_being_tried(tmp_path, monkeypa
     assert [p.stem for p in (work / "relisten").iterdir()] == ["m01"]
 
 
+def test_a_clip_that_stalls_gets_one_more_try_with_thinking_turned_down(tmp_path, monkeypatch):
+    """2026-10-08: one 10/5 clip went silent eight times running at the model's default and
+    answered in 3 s at LOW. Without this the lesson never gets a moments.json."""
+    work, cfg = lesson(tmp_path, monkeypatch)
+    fake, calls = relisten(fail_on={"m03"}, low_answers=True)
+    monkeypatch.setattr(pipeline, "_relisten", fake)
+
+    pipeline.run(cfg)
+
+    assert calls == ["m01", "m02", "m03", "m04", "m05"]
+    assert len(pipeline._load(work / "moments.json", MomentsFile).moments) == 5
+
+
+def test_re_listens_wait_less_than_pass_a_before_giving_up_on_a_silent_call(tmp_path, monkeypatch):
+    work, cfg = lesson(tmp_path, monkeypatch, n=1)
+    timeouts = []
+    monkeypatch.setattr(pipeline, "make_client", lambda t: timeouts.append(t) or object())
+    monkeypatch.setattr(pipeline, "_relisten", relisten()[0])
+    pipeline.run(cfg)
+    assert timeouts == [pipeline.PASS_B_IDLE_TIMEOUT_S] and timeouts[0] < cfg.stream_timeout
+
+    # --stream-timeout can still tighten it further
+    (work / "moments.json").unlink()
+    cfg.stream_timeout, timeouts[:] = 30.0, []
+    pipeline.run(cfg)
+    assert timeouts == [30.0]
+
+
 def test_a_rejected_clip_is_remembered_as_rejected(tmp_path, monkeypatch):
     work, cfg = lesson(tmp_path, monkeypatch, n=2)
 
-    def fake(client, model, clip, cand):
+    def fake(client, model, clip, cand, thinking_level=None):
         return Relisten(keep=clip.stem == "m01", type="correction", student_verbatim=clip.stem,
                         explanation="z", confidence=0.9)
     monkeypatch.setattr(pipeline, "_relisten", fake)
