@@ -71,3 +71,15 @@ correct it, the correct form he SHOULD have given. null only if no correction ap
 5. explanation — 1–3 sentences in English: what the error or point is and why it matters (particle \
 choice, conjugation, register, vocabulary…).
 6. confidence — 0 to 1, that this moment is real and correctly captured."""
+
+
+SLIDE = """This is one slide from a Japanese lesson, as the teacher left it on a shared screen.
+Transcribe every piece of text on it, top to bottom, left to right. Do not correct or complete anything.
+
+- Kanji often carry small furigana above them. Write the kanji as printed and leave the furigana out.
+- kind = "printed": the slide's or textbook's own text.
+- kind = "typed": text the teacher typed onto the slide, usually in a tinted box or in a different \
+font or colour from the textbook.
+- kind = "handwritten": pen strokes — written words, circled choices (give the circled text), arrows \
+with labels.
+- Leave out webcam tiles, people's name labels, and window or browser chrome."""

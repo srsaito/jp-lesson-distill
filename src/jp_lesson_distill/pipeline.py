@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import prompts
 from .archive import archive_lesson
+from .board import find_video, run_board
 from .audio import clip_audio, duration_seconds, prep_audio, split_windows
 from .gemini import (
     DEFAULT_MODEL,
@@ -55,6 +56,10 @@ class Config:
     pass_a_thinking: str | None = PASS_A_THINKING_LEVEL
     # Copy this lesson's non-audio outputs to OneDrive when the run ends (docs/archive.md).
     archive: bool = True
+    # Read the shared screen into a board timeline (ADR-0008). `video` None = look beside the
+    # recording; a lesson with no video simply has no board.
+    board: bool = True
+    video: Path | None = None
 
     @property
     def lesson_date(self) -> str:
@@ -77,10 +82,32 @@ def run(cfg: Config) -> Path | None:
     back; they are worth keeping most when something has gone wrong.
     """
     try:
-        return _run(cfg)
+        result = _run(cfg)
+        if cfg.board and not cfg.skip_pass_b:
+            _board(cfg)
+        return result
     finally:
         if cfg.archive:
             archive_lesson(cfg.date, cfg.work_dir, cfg.recording)
+
+
+def _board(cfg: Config) -> None:
+    """The board timeline, after the moments and never at their expense.
+
+    Warn-only, like the archive: the moments are already emitted by the time this runs, and
+    a screen that could not be read (no video, not macOS, a Gemini hiccup on a slide) is no
+    reason to report the lesson as failed. `distill board` runs it again by itself.
+    """
+    video = cfg.video or find_video(cfg.recording)
+    if video is None:
+        print(f"[board] no video beside {cfg.recording.name} — no board timeline "
+              "(pass --video, or run `distill board <video> --date …`)")
+        return
+    try:
+        run_board(video, cfg.date, cfg.work_dir, cfg.out_dir)
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        print(f"[board] WARNING: board timeline failed ({type(exc).__name__}: {exc}); the moments "
+              f"are unaffected. Retry with `distill board {video} --date {cfg.date}`")
 
 
 def _run(cfg: Config) -> Path | None:

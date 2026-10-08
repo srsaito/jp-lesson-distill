@@ -86,3 +86,14 @@ class MomentsFile(BaseModel):
     model: str
     generated_at: str
     moments: list[Moment]
+
+
+# --- board timeline (ADR-0008): Gemini's reading of one slide's final frame ---
+
+class SlideLine(BaseModel):
+    text: str
+    kind: Literal["printed", "typed", "handwritten"]
+
+
+class SlideText(BaseModel):
+    lines: list[SlideLine]

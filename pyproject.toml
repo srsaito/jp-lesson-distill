@@ -7,6 +7,10 @@ dependencies = [
     "google-genai>=1.0",
     "pydantic>=2.7",
     "imageio-ffmpeg>=0.5",
+    # board timeline (ADR-0008): frame comparison, slide images, and macOS Vision text recognition
+    "numpy>=1.26",
+    "pillow>=10",
+    "ocrmac>=1.0; sys_platform == 'darwin'",
 ]
 
 [project.scripts]

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .archive import archive, archive_lesson, main_work_dir
+from .board import run_board
 from .gemini import (
     DEFAULT_MODEL,
     PASS_A_THINKING_LEVEL,
@@ -51,6 +52,23 @@ def main() -> None:
     p.add_argument("--no-archive", action="store_true",
                    help="don't copy this lesson's outputs to OneDrive when the run ends "
                         "(for experiments; see docs/archive.md)")
+
+    p.add_argument("--video", type=Path,
+                   help="the lesson video, for the board timeline (default: the recording itself if "
+                        "it is a video, else …_class_video.mp4 beside …_class_audio.m4a)")
+    p.add_argument("--no-board", action="store_true",
+                   help="skip the board timeline (reading the shared screen takes 10–20 minutes)")
+
+    # distill board — the board timeline by itself (ADR-0008)
+    bd = sub.add_parser("board", help="read the lesson video's shared screen into a board timeline")
+    bd.add_argument("video", type=Path, help="the lesson video")
+    bd.add_argument("--date", required=True, help="lesson date, YYYYMMDD")
+    bd.add_argument("--out-dir", type=Path, default=Path("/Users/stevensaito/Docs/Vault-GeneralNotes/_raw"))
+    bd.add_argument("--work-dir", type=Path, default=Path("work"))
+    bd.add_argument("--no-gemini", action="store_true",
+                    help="on-device text recognition only: free, but kanji under furigana come out "
+                         "wrong and handwriting is mostly missed")
+    bd.add_argument("--no-archive", action="store_true")
 
     # distill label — build a blind listening kit for diarization ground truth (jld-dli)
     lab = sub.add_parser("label", help="sample lines and cut blind clips to label by ear")
@@ -101,6 +119,15 @@ def main() -> None:
             if done.not_archived:
                 sys.exit(f"not archived (no lesson folder in OneDrive): {', '.join(done.not_archived)}")
             return
+        if args.command == "board":
+            if not args.video.exists():
+                parser.error(f"video not found: {args.video}")
+            try:
+                run_board(args.video, args.date, args.work_dir, args.out_dir, use_gemini=not args.no_gemini)
+            finally:
+                if not args.no_archive:
+                    archive_lesson(args.date, args.work_dir, args.video)
+            return
         if args.command == "score":
             dump(args.date, args.work_dir) if args.dump else report(args.date, args.work_dir, args.against)
             return
@@ -131,6 +158,7 @@ def main() -> None:
             pass_a_thinking=(None if args.pass_a_thinking == "model-default"
                              else args.pass_a_thinking.upper()),
             archive=not args.no_archive,
+            board=not args.no_board, video=args.video,
         ))
     except KeyboardInterrupt:
         sys.exit(130)
