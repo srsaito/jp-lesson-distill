@@ -22,6 +22,9 @@ from google.genai import errors as genai_errors
 from google.genai import types
 
 TRANSIENT = (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadTimeout)
+# What a call raises once its retries are spent: for callers that would rather lose one call
+# than the run (Pass B re-listens are independent of each other).
+CALL_FAILED = (*TRANSIENT, genai_errors.APIError)
 RETRYABLE_CODES = {429, 500, 503}  # rate limit / transient server errors
 
 # --- repetition-loop detection, calibrated against every transcript on disk (jld-hc9.3) ---
