@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from .archive import archive_lesson
 from .board import find_video, run_board
 from .audio import clip_audio, duration_seconds, prep_audio, split_windows
 from .gemini import (
+    CALL_FAILED,
     DEFAULT_MODEL,
     PASS_A_THINKING_LEVEL,
     STREAM_IDLE_TIMEOUT_S,
@@ -36,6 +38,7 @@ from .models import (
 from .quality import WindowReport, evaluate, marker_verdict
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
+PASS_B_GIVE_UP = 2  # consecutive failed clips before Pass B stops trying the rest (jld-8rb)
 
 
 @dataclass
@@ -139,6 +142,9 @@ def _run(cfg: Config) -> Path | None:
         print(f"[detect] cached: {candidates_path}")
     else:
         client = get_client()
+        # Clips and re-listens are filed by candidate number; a new detect renumbers them.
+        for stale in ("clips", "relisten"):
+            shutil.rmtree(work / stale, ignore_errors=True)
         print("[detect] flagging candidate learning moments")
         prompt = prompts.DETECT.format(transcript=transcript.model_dump_json())
         cands: CandidateList = generate(client, cfg.model, [prompt], CandidateList, progress=True)
@@ -165,14 +171,41 @@ def _run(cfg: Config) -> Path | None:
         client = get_client()
         clips_dir = work / "clips"
         clips_dir.mkdir(exist_ok=True)
+        # One file per clip (jld-8rb). moments.json is only written when every clip is in, so
+        # without these a call that failed on clip 16 threw away the fifteen already paid for.
+        relisten_dir = work / "relisten"
+        relisten_dir.mkdir(exist_ok=True)
         moments: list[Moment] = []
+        failed: list[str] = []
+        streak = 0  # consecutive clips whose call failed
         for i, cand in enumerate(ordered, start=1):
             t0, t1 = parse_ts(cand.t_start), parse_ts(cand.t_end)
             clip = clips_dir / f"m{i:02d}.m4a"
             if not clip.exists():
                 clip_audio(audio, clip, t0 - CLIP_PAD, min(total, t1 + CLIP_PAD))
-            print(f"[pass_b] {i}/{len(ordered)} re-listening {cand.t_start}-{cand.t_end} ({cand.type})")
-            r: Relisten = _relisten(client, cfg.model, clip, cand)
+            saved = relisten_dir / f"m{i:02d}.json"
+            if saved.exists():
+                print(f"[pass_b] {i}/{len(ordered)} cached: {saved.name}")
+                r: Relisten = _load(saved, Relisten)
+            else:
+                print(f"[pass_b] {i}/{len(ordered)} re-listening {cand.t_start}-{cand.t_end} ({cand.type})")
+                if streak >= PASS_B_GIVE_UP:
+                    failed.append(f"{i} ({cand.t_start}, not tried)")
+                    continue
+                try:
+                    r = _relisten(client, cfg.model, clip, cand)
+                except CALL_FAILED as exc:
+                    # Its retries are spent. One bad clip is no reason to drop the others, which
+                    # are independent of it. Two in a row is the network or the service, and each
+                    # further clip would wait out four idle timeouts before failing the same way.
+                    streak += 1
+                    failed.append(f"{i} ({cand.t_start})")
+                    print(f"[pass_b]   FAILED after retries ({type(exc).__name__}); "
+                          + ("stopping here, the next ones would fail the same way"
+                             if streak >= PASS_B_GIVE_UP else "carrying on with the rest"), flush=True)
+                    continue
+                streak = 0
+                _save(saved, r)
             if not r.keep:
                 print(f"[pass_b]   rejected: {r.explanation}")
                 continue
@@ -181,6 +214,14 @@ def _run(cfg: Config) -> Path | None:
                 student_verbatim=r.student_verbatim, teacher_correction=r.teacher_correction,
                 explanation=r.explanation, confidence=r.confidence,
             ))
+        if failed:
+            # No moments.json: a file missing some moments would look finished, be emitted, and
+            # be cached as the answer. Stopping here costs one re-run that only redoes the gaps.
+            raise SystemExit(
+                f"[pass_b] {len(failed)} of {len(ordered)} clips could not be re-listened: "
+                f"{', '.join(failed)}. The other {len(ordered) - len(failed)} are saved in "
+                f"{relisten_dir}; run the same command again and only these are retried. "
+                "No moments.json was written.")
         out = MomentsFile(
             lesson_date=cfg.lesson_date,
             source_recording=str(cfg.recording),
