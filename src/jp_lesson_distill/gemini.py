@@ -223,6 +223,11 @@ def audio_part(path: Path) -> types.Part:
     return types.Part.from_bytes(data=path.read_bytes(), mime_type="audio/mp4")
 
 
+def image_part(path: Path) -> types.Part:
+    """Inline part for one slide frame (board timeline, ADR-0008)."""
+    return types.Part.from_bytes(data=path.read_bytes(), mime_type="image/jpeg")
+
+
 def generate(client: genai.Client, model: str, contents: list, schema: type,
              temperature: float = 0.2, progress: bool = False,
              debug_dump: Path | None = None, thinking_level: str | None = None):

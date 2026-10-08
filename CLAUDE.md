@@ -18,13 +18,14 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 @decisions/README.md
 
 ## Boundaries & contracts
-- **Repo↔vault contract is `moments.json`** (schema in ADR-0003 and `src/jp_lesson_distill/models.py`). This repo's job ends when `YYYYMMDD-moments.json` + `YYYYMMDD-transcript.md` land in `/Users/stevensaito/Docs/Vault-GeneralNotes/_raw/`.
+- **Repo↔vault contract is `moments.json`** (schema in ADR-0003 and `src/jp_lesson_distill/models.py`). This repo's job ends when `YYYYMMDD-moments.json` + `YYYYMMDD-transcript.md` land in `/Users/stevensaito/Docs/Vault-GeneralNotes/_raw/`, with `YYYYMMDD-board.md` + `YYYYMMDD-board/` beside them when the lesson has a video (ADR-0008; optional, and `moments.json` is unchanged by it).
 - **Card generation lives in the General vault**, not here: skill `.claude/commands/distill-jp-lesson.md`, card rules `_wiki/日本語の授業/CLAUDE.md` (furigana, TTS, deck/tags), FlashGen MCP. Do not duplicate card rules in this repo.
 - **Recordings are canonical in OneDrive** (ADR-0004). The CLI takes any local path (incl. the OneDrive sync folder). Never commit audio to this repo; never store recordings in the Obsidian vaults.
 
 ## Running
 - `uv run distill run <recording> --date YYYYMMDD` — full pipeline. Stage outputs cache under `work/YYYYMMDD/`; re-runs skip completed stages (delete a stage file to redo it). Pass A windows the recording internally (`--window-minutes` / `--overlap-seconds`, ADR-0005) and caches each window as `transcript_w<NN>.json` — delete one to redo just that window.
 - Requires `GEMINI_API_KEY` in the environment. ffmpeg resolves from the `imageio-ffmpeg` wheel (no system install needed).
+- **Every run also reads the lesson video's shared screen into a board timeline** (`board.py`, ADR-0008): `YYYYMMDD-board.md` + `YYYYMMDD-board/` land beside the moments. The レジュメ PDF is just the final state of each slide, so this is the レジュメ minutes after class, plus *when* each line was typed. The video is found beside the audio (`…_class_audio.m4a` → `…_class_video.mp4`) or given with `--video`; no video means no board, not a failure. It runs after the moments are emitted and is warn-only. Reading takes 10–20 minutes for an hour and is cached in `work/<date>/board/ocr.jsonl` (delete it to re-read); `--no-board` skips it, `distill board <video> --date …` runs it alone. macOS only (Vision text recognition).
 - **Every run archives itself to OneDrive** (`archive.py`, `docs/archive.md`). `work/` exists on one laptop only, and Gemini output and blind labels can't be regenerated identically. So at the end of every `distill run`, including one that fails partway, and after every `distill label --play` session, the lesson's non-audio files are copied next to its recording at `日本語/Soso/Vol N/L##/distill-archive/<YYYYMMDD>/`, mirroring `work/`. `--no-archive` turns it off for experiments; `distill archive [--date …] [--dry-run]` catches up by hand. It is warn-only: a missing OneDrive never fails a run. **If `work/` is missing or empty, restore from the archive before re-running anything expensive.**
 
 ## How this workstream is organized
@@ -47,6 +48,7 @@ Details: `docs/architecture.md`. Phase 2+ (video/whiteboard fusion, dual-engine 
 | `quality.py` | per-window sanity gates on Pass A output + the address-form diarization canary | thresholds are calibrated against real transcripts, never guessed; re-check them if you change them |
 | `labeling.py` | sampling, blinding and scoring for diarization ground truth | pure functions; the listener must never see the model's label |
 | `validate.py` | `distill label` / `distill score` — cut clips, listen, score | offline once the clips exist; answers are saved after every keystroke |
+| `board.py` | board timeline (ADR-0008): one frame a second from the video, macOS Vision where the screen changed and then held still, grouped into slides with what was typed on each and when; Gemini reads each slide's final frame once | never touches Pass A; warn-only inside `distill run`; Vision gives *where and when*, Gemini gives *what it says* — Vision alone turns 地震 into 地態 under furigana |
 | `archive.py` | copies each lesson's non-audio outputs to OneDrive beside its recording; runs after every `distill run` and label session, and via `distill archive` | warn-only — archiving never fails a run; never archive audio; never put its contents in this public repo |
 
 ### Dev loop

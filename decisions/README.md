@@ -10,3 +10,5 @@ Architecture Decision Records for jp-lesson-distill. One decision per file, `NNN
 | [[0004-recordings-canonical-onedrive]] | Recordings stay canonical in OneDrive; nothing stored in vaults or repo | Accepted |
 | [[0005-windowed-pass-a]] | Pass A windows the recording internally (~20 min, 30 s overlap) and merges to one transcript | Accepted |
 | [[0006-pin-the-model]] | The default model is a pinned id, not a `-latest` alias | Accepted |
+| [[0007-pass-a-thinking-level]] | Pass A sends `thinking_level=medium`; detect and Pass B send none | Accepted |
+| [[0008-board-timeline]] | The shared screen is read into a board timeline that lands beside `moments.json` | Accepted |
