@@ -4,6 +4,19 @@
 - This pipeline uses its **own Google Cloud project ("Gemini Project"**, Tier 1 paid, **$100/mo spend cap**) via `GEMINI_API_KEY` in the repo's gitignored `.env` — which overrides shell env (the shell's key belongs to the **FlashGen project, $20/mo cap**; both under the same billing account, $250 account cap). Verified working.
 - The 7/9–7/10 "rate limiting" mystery: an auto-set experimental **$3.87/mo spend cap** on the FlashGen project — hit mid-run and surfaced as 429s. Not free-tier RPM (the account was Tier 1 all along).
 
+## Where we left off (2026-10-17, later — jld-tlc spike run; ADR-0010 PROPOSED, waiting on Steven's ears)
+- ⭐ **NEXT (Steven): the verbatim listening kit.** `uv run python scripts/spike_per_track.py play --date 20261014 --window 3`, then `--date 20261012`. 45 + 60 clips from **Steven's own track**, each with the A1 / A2 / A2c text for that line, shuffled and blind. Pick the closest (`1/2/3`), `t` for a tie, `n` for none. A note can follow the key. It saves after every answer, resumes, and plays in random order, so a partial session is still fair. Tally: `… score --date 20261012,20261014 --window 3`. Then accept, amend or reject `decisions/0010-per-track-pass-a.md`.
+- **What the spike measured** (10/14 and 10/12, window 3 each, all in ADR-0010):
+  - A2 splits 9 of 22 and 18 of 41 of A0's energy-ambiguous segments into real turns.
+  - Every A2 start lands on its own speaker's voice; A0 starts are 14–25 s off in places, which is Pass B's whole ±15 s pad.
+  - The share track gives the 会話 as clean, labelled lines (`jld-lg6` solved when tracks exist).
+  - Fresh detect + Pass B moments, A0/A1/A2/A2c: 8/8/9/6 (10/14), 8/6/11/10 (10/12). Counts at window scale are within detect's own variance. The whole-lesson 12→22 does not reproduce over one window.
+- **Surprises worth keeping:**
+  1. Per-track calls **hallucinate backchannels into silence** (teacher うん every 4 s while Steven talks). Every such line sits on digital silence, so an energy check deletes it.
+  2. **Steven's soft speech is at −33 to −55 dB**, so the −45 dB relabel threshold misses it. "Any sound" is > −70 dB.
+  3. **Teacher context can normalise Steven** (one clear false start smoothed away on 10/12), but the no-context arm was erratic run to run (one call reported no thinking, answered in 4 s and lumped his lines). The kit decides.
+- Spike code: `scripts/spike_per_track.py` (stages transcribe / compare / detect / kit / play / score). Outputs: `work/spike-tlc/<date>/w03/` (`transcript_A*.md`, `student_side_by_side.md`, `compare.json`, `moments_A*.json`), archived to OneDrive. Off the production path: `PASS_A`, model and thinking levels untouched.
+
 ## Where we left off (2026-10-17 — Zoom per-participant tracks change the plan; open beads ranked)
 - ⭐⭐ **Zoom's per-participant recording is ON (since 10/8)**, which makes the 10/8 line below ("off on Steven's machine… untested") stale. Every lesson since 10/8 has `…_class_audio/` beside `…_class_audio.m4a`, three m4a files the same length as the mix: `audioSteveSaito1…` (Steven's mic), `audio末武創一2…` (Soso先生's mic), `audio末武創一3…` (the computer sound he shares with the screen = textbook playback). ⚠️ **Identify them by exact display-name prefix** — a loose glob like `audio*3[0-9]*` also matches digits inside the meeting id and picks the wrong file.
 - **Measured from loudness alone (0.1 s RMS, active > −45 dB):** the third file is active only 2–5% of a lesson, always during playback, and **both mics are silent during every playback span** (10/8, 10/12, 10/14). So playback does not bleed onto the teacher track. Edge case: if he ever plays audio out of his speakers instead of sharing sound, it would land on his mic.
