@@ -21,18 +21,19 @@ The spike (`scripts/spike_per_track.py`) compared, over the same window of the m
 
 The prompts were single-speaker variants of `PASS_A`'s verbatim rules. Model, thinking level (`medium`) and `PASS_A` itself were unchanged.
 
-## What it measured (10/14 window 3 = 39:00–56:35; 10/12 window 3 = 39:00–59:00)
+## What it measured (10/14 window 3 = 39:00–56:35; 10/12 window 3 = 39:00–59:00; 10/25 whole lesson, 4 windows)
 
-| | 10/14 | 10/12 |
-|---|---|---|
-| A0 segments the energy rule cannot decide (merged or mis-cut) | 22 of 69 | 41 of 101 |
-| …of those, split by A2 into turns from 2+ tracks | 9 | 18 |
-| segment starts on their own speaker's voice (−1..+2 s): A0 / A2 | 60/69 / 146/152 | 89/101 / 237/237 |
-| segments: A0 / A2 / A2c | 69 / 152 / 122 | 101 / 237 / 290 |
-| playback transcribed as its own lines (share track) | 14 lines in 2 spans | 33 lines in 10 spans |
-| moments, fresh detect + Pass B on this window: A0 / A1 / A2 / A2c | 8 / 8 / 9 / 6 | 8 / 6 / 11 / 10 |
-| lines with no sound on their own track (hallucinated) in A2 | 6 | 3 |
+| | 10/14 | 10/12 | 10/25 |
+|---|---|---|---|
+| A0 segments the energy rule cannot decide (merged or mis-cut) | 22 of 69 | 41 of 101 | 91 of 366 |
+| …of those, split by A2 into turns from 2+ tracks | 9 | 18 | 24 |
+| segment starts on their own speaker's voice (−1..+2 s): A0 / A2 | 60/69 / 146/152 | 89/101 / 237/237 | 343/366 / 412/417 |
+| segments: A0 / A2 / A2c | 69 / 152 / 122 | 101 / 237 / 290 | 366 / 417 / 442 |
+| playback transcribed as its own lines (share track) | 14 lines in 2 spans | 33 lines in 10 spans | 12 lines in 3 spans |
+| moments, fresh detect + Pass B per window: A0 / A1 / A2 / A2c | 8 / 8 / 9 / 6 | 8 / 6 / 11 / 10 | 35 / 32 / 33 / 30 |
+| lines with no sound on their own track (hallucinated) in A2 | 6 | 3 | 4 |
 
+- **10/25, the first whole lesson, ties on moments.** Its mixed transcript was better than 10/12's and 10/14's: 87% label agreement with the tracks, and a typical start 1.2 s from the energy onset against 4–5 s. So it is the lesson where per-track transcription has the least to fix. Each arm has about 10 moments the other lacks. Most are the same exchange timed more than 25 s apart, and the rest look like detect variance. Running detect twice and taking the union would find more than switching transcripts does.
 - **Timestamps.** A0's starts are wrong by 14–25 s in places late in the window. On 10/14, a line Steven begins at 47:20, right after the teacher stops at 47:17, is placed at 46:59 inside a teacher turn. Pass B clips ±15 s, so that is the size of error that voids a re-listen. A2's starts are snapped to energy at 0.1 s.
 - **Merged turns.** A1 still carries Steven's long hesitation at 48:48 inside a `teacher` segment, and a teacher explanation labelled `student`, because the energy rule leaves mixed segments alone. A2 separates both.
 - **Playback.** The 会話 that A0 wrote as one 14-line `teacher` block comes back from the share track as the dialogue, line by line, under its own label. This is `jld-lg6` solved for lessons with tracks.

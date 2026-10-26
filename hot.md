@@ -11,6 +11,14 @@
   - Every A2 start lands on its own speaker's voice; A0 starts are 14–25 s off in places, which is Pass B's whole ±15 s pad.
   - The share track gives the 会話 as clean, labelled lines (`jld-lg6` solved when tracks exist).
   - Fresh detect + Pass B moments, A0/A1/A2/A2c: 8/8/9/6 (10/14), 8/6/11/10 (10/12). Counts at window scale are within detect's own variance. The whole-lesson 12→22 does not reproduce over one window.
+- **2026-10-25 run as the first whole-lesson spike** (all 4 windows; outputs in `work/spike-tlc/20261025/`).
+  - Moments tie: A0/A1/A2/A2c 35/32/33/30.
+  - A2 splits 24 of 91 ambiguous segments.
+  - Only 4 hallucinated lines.
+  - The mixed transcript was unusually good that day: 87% label agreement, starts about 1 s off. The address-form check still warned (14/24), driven by window 1 (76%).
+  - A third kit is cut: `play --date 20261025 --window 1` (44 clips). Optional; 10/14 + 10/12 decide the ADR.
+  - The production run for 10/25 is done and in `_raw/` (23 moments, board with 13 slides).
+  - **Gemini billing:** on 10/25 the project hit `402 — prepayment credits depleted`. Steven topped it up. It is prepaid now, not just a spending cap.
 - **Surprises worth keeping:**
   1. Per-track calls **hallucinate backchannels into silence** (teacher うん every 4 s while Steven talks). Every such line sits on digital silence, so an energy check deletes it.
   2. **Steven's soft speech is at −33 to −55 dB**, so the −45 dB relabel threshold misses it. "Any sound" is > −70 dB.
