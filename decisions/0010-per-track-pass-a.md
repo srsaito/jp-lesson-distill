@@ -49,7 +49,14 @@ When all three tracks are present and well-formed, transcribe per track, provide
 
 Whatever the kit says:
 
-- **Fallback is automatic.** Tracks are identified by exact display-name prefix, with lengths within 2 s of the mix and all three roles present; otherwise the run takes today's mixed path, and the log says which path it took and why.
+- **⭐ REQUIREMENT: the mixed-recording path stays a fully supported fallback** (Steven, 2026-10-26). Per-track transcription is an upgrade for lessons that have the tracks, never a dependency. The pipeline must still produce `moments.json` from the mix alone, with the quality it has today: windowed Pass A, the sanity gates, the address-form check, and the energy relabel (A1) when tracks exist but cannot be transcribed. It falls back when:
+  - **No tracks:** lessons before 2026-10-08, or Zoom's per-participant setting turned off.
+  - **Equipment problems:** a track missing, empty, corrupt or unreadable; a length that does not match the mix (within 2 s); a role that cannot be identified by exact display-name prefix; or a mic track that is silent for the whole lesson. A silent share track is normal (no playback) and only warns.
+  - **A partial set:** any mic track missing means the mixed path for the whole lesson, not a guess at the missing speaker.
+  - **Per-track transcription failing** on a window after its retries: that window falls back to the mixed path, and the merged transcript says which windows did.
+  - **Asked for:** a CLI flag forces the mixed path (and another forces per-track), for regression checks and comparisons.
+  
+  The run log always says which path each window took and why. The fallback path stays under test: the unit tests and the smoke test cover it (the synthetic lesson has no tracks, so the smoke test exercises it on every run), and removing it needs a new ADR.
 - **Drop any per-track line whose own track is silent** (max below about −70 dB within −2..+3 s of its start).
 - **Transcribe the share track over its active spans only, as played audio.** Warn when it is silent all lesson.
 - **Warn when a track's silence is not digital zero.** Everything above was measured with suppression on.

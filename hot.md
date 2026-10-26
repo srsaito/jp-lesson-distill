@@ -11,6 +11,11 @@
   - Every A2 start lands on its own speaker's voice; A0 starts are 14–25 s off in places, which is Pass B's whole ±15 s pad.
   - The share track gives the 会話 as clean, labelled lines (`jld-lg6` solved when tracks exist).
   - Fresh detect + Pass B moments, A0/A1/A2/A2c: 8/8/9/6 (10/14), 8/6/11/10 (10/12). Counts at window scale are within detect's own variance. The whole-lesson 12→22 does not reproduce over one window.
+- ⭐ **10/14 verbatim kit scored (2026-10-26, Steven's ears, 45 clips).**
+  - Per-track beats the mix (relabelled): A2 12–2, A2c 12–1. Sign test p ≈ 0.01 and 0.003.
+  - A2 vs A2c ties 4–4, but both "corrections" of Steven's words came from A2, the context arm (on- → only; できたん、できたの → できたんだって).
+  - ⇒ Recommendation: accept ADR-0010 with **no context**. The 10/12 kit is optional, a check on the context call.
+  - **REQUIREMENT (Steven):** the mixed-recording path stays a fully supported fallback (no tracks, equipment problems, a partial set, a failing window, or forced by a flag). It is spelled out in ADR-0010's Decision.
 - **2026-10-25 run as the first whole-lesson spike** (all 4 windows; outputs in `work/spike-tlc/20261025/`).
   - Moments tie: A0/A1/A2/A2c 35/32/33/30.
   - A2 splits 24 of 91 ambiguous segments.
