@@ -370,7 +370,7 @@ FILLERS = re.compile(r"えーと|えっと|えー|あー|あの|うーん|んー
 def _cover(energy, rows, role_key: str, speaker: str, lesson: Lesson) -> float:
     """Share of a track's active frames inside spans labelled with its speaker (span = start→next start)."""
     act = energy[role_key] > SOUND_DB
-    lo, hi = int(lesson.offset / FRAME), int(lesson.end / FRAME)
+    lo, hi = int(lesson.offset / FRAME), min(int(lesson.end / FRAME), *(len(v) for v in energy.values()))
     covered = np.zeros(hi - lo, dtype=bool)
     starts = [r["start"] for r in rows] + [lesson.end]
     for i, r in enumerate(rows):
@@ -421,7 +421,7 @@ def stats(name: str, rows: list[dict], lesson: Lesson, energy) -> dict:
 def compare(args) -> None:
     lesson = Lesson(args)
     energy = lesson.energy()
-    lo, hi = int(lesson.offset / FRAME), int(lesson.end / FRAME)
+    lo, hi = int(lesson.offset / FRAME), min(int(lesson.end / FRAME), *(len(v) for v in energy.values()))
 
     # Same clock? Mix activity vs the union of the tracks, at lags of up to ±2 s.
     mix = energy["mix"][lo:hi] > ACTIVE_DB
