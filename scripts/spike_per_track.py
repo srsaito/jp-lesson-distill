@@ -680,6 +680,7 @@ def score(args) -> None:
     """Tally the verbatim kit answers for every date given (comma-separated --date)."""
     from collections import Counter
     total: Counter = Counter()
+    wins: dict = {}
     for date in args.date.split(","):
         path = Path(args.work_dir) / date / f"w{args.window:02d}" / "verbatim_kit" / "items.jsonl"
         items = [KitItem.model_validate_json(x) for x in path.read_text().splitlines()]
@@ -689,7 +690,46 @@ def score(args) -> None:
         for i in items:
             if i.answer and i.note:
                 print(f"   {i.id} {fmt_ts(i.t)} -> {i.answer}: {i.note}")
+        _pairwise(date, items, wins)
     print(f"all: {dict(total)}")
+    for x, y in (("A2", "A1"), ("A2c", "A1"), ("A2c", "A2")):
+        a, b = wins.get((x, y), 0), wins.get((y, x), 0)
+        print(f"{x} vs {y}: {a}-{b} (two-sided sign test p={_sign_p(a, b):.3f})")
+
+
+# Notes that rank further than "the key plus whatever 'and N' names" (ADR-0010's table).
+KIT_BEST = {
+    ("20261014", "v11"): {"A2c", "A1"},   # "I'd say 1 and 2 are closest"
+    ("20261014", "v22"): {"A2"},          # tie key, but 1 best, 3 next, 2 worst
+    ("20261014", "v32"): {"A2c"},         # tie key, but 3 better (kept 可能せ)
+    ("20261012", "v57"): {"A2c"},         # "2 is a bit closer" (the full ちょっと)
+}
+KIT_EXTRA = {("20261014", "v22"): [("A2c", "A1")], ("20261012", "v57"): [("A2", "A1")]}
+
+
+def _pairwise(date: str, items: list[KitItem], wins: dict) -> None:
+    """Head-to-head wins: the keyed arm, plus any arm a note names as tied ("and 3 ..."),
+    beats the arms outside that set. Plain ties and "none" compare nothing."""
+    for i in items:
+        best = KIT_BEST.get((date, i.id))
+        if best is None:
+            if i.answer in (None, "tie", "none"):
+                continue
+            best = {i.answer}
+            m = re.match(r"\s*(?:and|&)\s*(\d)", i.note)
+            if m:
+                best.add(i.order[int(m.group(1)) - 1])
+        for w in best:
+            for lose in set(i.order) - best:
+                wins[(w, lose)] = wins.get((w, lose), 0) + 1
+        for w, lose in KIT_EXTRA.get((date, i.id), []):
+            wins[(w, lose)] = wins.get((w, lose), 0) + 1
+
+
+def _sign_p(a: int, b: int) -> float:
+    from math import comb
+    n, k = a + b, min(a, b)
+    return min(1.0, 2 * sum(comb(n, j) for j in range(k + 1)) / 2 ** n) if n else 1.0
 
 
 def main() -> None:

@@ -1,11 +1,11 @@
 ---
-status: proposed
-date: 2026-10-17
+status: accepted
+date: 2026-10-27
 ---
 
 # 0010 — Pass A per Zoom participant track when the tracks exist
 
-**Proposed, not accepted.** The structural measurements are in and favour per-track transcription. The measurement the spike's decision rule names as deciding it, verbatim fidelity judged by ear, is cut and waiting to be listened to (`jld-tlc`). Accept, amend or reject this ADR when that is scored.
+**Accepted 2026-10-27** (proposed 2026-10-17), after Steven scored the blind verbatim kits by ear: per-track transcription beats the mixed recording on his own words, and transcribing his track **without** the teacher's text beats transcribing it with. Spike: `jld-tlc`, `scripts/spike_per_track.py`.
 
 ## Context
 Since 2026-10-08 Zoom writes one file per participant beside the mix: Steven's mic, Soso先生's mic, and his shared computer sound (the textbook playback). All three share the mix's clock and length. Zoom's noise suppression leaves each track at exact digital silence (−120 dB) while that person is quiet.
@@ -41,13 +41,33 @@ The prompts were single-speaker variants of `PASS_A`'s verbatim rules. Model, th
 - **Moment counts on one window are within detect's own variance.** The whole-lesson 12 vs 22 does not reproduce at window scale (8 vs 8 on 10/14). The count is weak evidence either way.
 - **Hallucination is real and cheap to catch.** The teacher track got invented うん lines every 4 s while Steven spoke (10/14 40:14–40:27, track at −89 to −120 dB). On 10/14, Steven's track got two invented interjections, in the context arm only. Every such line sits on digital silence, so an energy check removes it.
 - **Soft speech is not lost, but it is quiet.** Steven's soft はい／うーん／あー sit at −33 to −55 dB on his own track. The −45 dB threshold from the relabel rule misses them. "Any sound" is anything above about −70 dB.
-- **Context cuts both ways (verbatim, unresolved).** With the teacher's text as context (A2), one clear false start on 10/12 was smoothed away (A2c 「食べるものもいまし…あー、言いました」, A2 「食べるものも、あー、言いました」). Without context (A2c), Steven's lines came back lumped into long segments on 10/14 (47 vs 77), on a call that reported no thinking at all and answered in 4 s. On 10/12 A2c instead produced the most segments of any arm. One run each cannot separate the arm from run-to-run variance.
+- **Context before the kits (superseded by the verbatim result below).** With the teacher's text as context (A2), one clear false start on 10/12 was smoothed away (A2c 「食べるものもいまし…あー、言いました」, A2 「食べるものも、あー、言いました」). Without context (A2c), Steven's lines came back lumped into long segments on 10/14 (47 vs 77), on a call that reported no thinking at all and answered in 4 s. On 10/12 A2c instead produced the most segments of any arm. One run each cannot separate the arm from run-to-run variance.
+- **Verbatim, by ear: the deciding measurement.** Steven listened to blind kits of clips cut from his own track: 45 clips from 10/14 and 60 from 10/12. For each clip he picked which of A1 / A2 / A2c matched what he said, errors and fillers included, with notes. Where a note named a second text as tied for closest, both count as winners. Head-to-head wins:
+
+  | | 10/14 | 10/12 | both | two-sided sign test |
+  |---|---|---|---|---|
+  | A2 (per track, context) vs A1 (mix, relabelled) | 17–2 | 13–5 | **30–7** | p < 0.001 |
+  | A2c (per track, no context) vs A1 | 16–1 | 18–3 | **34–4** | p < 0.001 |
+  | A2c vs A2 | 8–9 | 16–8 | **24–17** | p ≈ 0.35 |
+
+  The margin between the context arms is not significant on its own, but every note points the same way. Context made the model write what Steven meant instead of what he said:
+  - his cut-off 「on-」 became "only";
+  - 「できたん、できたの」 became 「できたんだって」;
+  - 「しゃ…社長」 became 「社長」;
+  - a た stutter and a cut-off い (for 意味) were dropped.
+  
+  A2c kept all of these, plus 「可能せ」. Context never clearly helped. A1 lost mostly by putting the wrong words in the clip: its starts drift and its turns merge.
 - **Cost.** Three calls per window instead of one: teacher 51–58 s, then Steven 66–69 s waiting on it, then one call per playback span (24 s on 10/14; 381 s on 10/12, including one stalled call).
 
-## Decision (proposed)
-When all three tracks are present and well-formed, transcribe per track, provided the verbatim kit does not show A2 or A2c losing to A1 on Steven's lines. The structural case is already made: speaker by construction, turns split, starts on the right voice, playback separated.
+## Decision
+When all three tracks are present and well-formed, Pass A transcribes **per track**:
+- **Soso先生's track and Steven's track are each transcribed on their own.** Steven's track gets **no teacher context** (A2c). The two calls are independent, so they can run in parallel.
+- **The share track is transcribed over its active spans only, as played audio.**
+- **The results are merged by start time,** each start snapped to its own track's energy onset and each end taken from that energy.
 
-Whatever the kit says:
+The model, the thinking level (`medium`) and the verbatim rules are unchanged. The single-speaker prompts restate `PASS_A`'s verbatim rules; `PASS_A` itself stays as the fallback path's prompt.
+
+With it:
 
 - **⭐ REQUIREMENT: the mixed-recording path stays a fully supported fallback** (Steven, 2026-10-26). Per-track transcription is an upgrade for lessons that have the tracks, never a dependency. The pipeline must still produce `moments.json` from the mix alone, with the quality it has today: windowed Pass A, the sanity gates, the address-form check, and the energy relabel (A1) when tracks exist but cannot be transcribed. It falls back when:
   - **No tracks:** lessons before 2026-10-08, or Zoom's per-participant setting turned off.
@@ -61,10 +81,10 @@ Whatever the kit says:
 - **Transcribe the share track over its active spans only, as played audio.** Warn when it is silent all lesson.
 - **Warn when a track's silence is not digital zero.** Everything above was measured with suppression on.
 
-Open until the kit is scored: **context or no context for Steven's track.** If neither is clearly better, prefer A2c. It is one call fewer on the critical path, and it cannot copy the teacher.
-
 ## Consequences
-- If accepted: `jld-ec6`'s verify/repair step becomes the fallback-path check; `jld-beb` and `jld-lg6` are re-scoped to the mixed-file path.
+- `jld-ec6`'s verify/repair step becomes the fallback-path check; `jld-beb` and `jld-lg6` are re-scoped to the mixed-file path.
 - The transcript schema needs a third speaker value (`played`) or a flag. Today the spike passes playback to detect as a prefixed teacher line. That is a `models.py` change, so it needs its own ADR (ADR-0003).
 - Per-track segments carry an `end` from energy for free. Pass B could clip to real turn boundaries instead of ±15 s.
+- **Moment counts do not rise on a good day** (10/25 tied). The gain is attribution, turn boundaries, start times and verbatim, which shows on the bad days (10/12, 10/14) and in Steven's ears. Recall is limited by detect's own variance: see `jld-dik`.
+- **A per-track call can misbehave without failing.** One no-context call on 10/14 reported no thinking, answered in 4 s and lumped Steven's lines into long segments. The build needs sanity gates on per-track windows, like the ones `quality.py` applies to the mix.
 - Lessons before 2026-10-08 never get this; their quality stays where A1 puts it.

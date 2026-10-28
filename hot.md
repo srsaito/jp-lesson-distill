@@ -4,8 +4,16 @@
 - This pipeline uses its **own Google Cloud project ("Gemini Project"**, Tier 1 paid, **$100/mo spend cap**) via `GEMINI_API_KEY` in the repo's gitignored `.env` — which overrides shell env (the shell's key belongs to the **FlashGen project, $20/mo cap**; both under the same billing account, $250 account cap). Verified working.
 - The 7/9–7/10 "rate limiting" mystery: an auto-set experimental **$3.87/mo spend cap** on the FlashGen project — hit mid-run and surfaced as 429s. Not free-tier RPM (the account was Tier 1 all along).
 
-## Where we left off (2026-10-17, later — jld-tlc spike run; ADR-0010 PROPOSED, waiting on Steven's ears)
-- ⭐ **NEXT (Steven): the verbatim listening kit.** `uv run python scripts/spike_per_track.py play --date 20261014 --window 3`, then `--date 20261012`. 45 + 60 clips from **Steven's own track**, each with the A1 / A2 / A2c text for that line, shuffled and blind. Pick the closest (`1/2/3`), `t` for a tie, `n` for none. A note can follow the key. It saves after every answer, resumes, and plays in random order, so a partial session is still fair. Tally: `… score --date 20261012,20261014 --window 3`. Then accept, amend or reject `decisions/0010-per-track-pass-a.md`.
+## Where we left off (2026-10-27 — ADR-0010 ACCEPTED; jld-tlc closed; build filed as epic jld-8nv)
+- ⭐ **Decided (Steven's ears, two blind kits, 105 clips):**
+  - Pass A goes **per track** when Zoom's tracks are present: per-track beats the mixed recording on his own words, 30–7 and 34–4.
+  - **Steven's track gets no teacher context**: 24–17, and every case of the model "fixing" his words came from the context arm.
+  - **The mixed recording stays a required fallback** (Steven): no tracks, equipment problems, a partial set, a failed window, or forced by a flag. The full list is in ADR-0010.
+  - `score` in `scripts/spike_per_track.py` reproduces the numbers.
+- ⭐ **NEXT: `jld-8nv.1`** (track discovery, validation, path selection with the fallback), then `.2` (per-track transcription + merge), `.3` (ghost filter, per-window gates and fallback), `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). The spike script is the code to lift from.
+- `jld-ec6`, `jld-beb` and `jld-lg6` are re-scoped to the fallback path. `jld-dik` (run detect twice and take the union) is the recall lever: moment counts tied on 10/25.
+
+## Where we left off (2026-10-17, later — jld-tlc spike run; ADR-0010 proposed then, see above)
 - **What the spike measured** (10/14 and 10/12, window 3 each, all in ADR-0010):
   - A2 splits 9 of 22 and 18 of 41 of A0's energy-ambiguous segments into real turns.
   - Every A2 start lands on its own speaker's voice; A0 starts are 14–25 s off in places, which is Pass B's whole ±15 s pad.
