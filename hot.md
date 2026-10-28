@@ -10,7 +10,14 @@
   - **Steven's track gets no teacher context**: 24–17, and every case of the model "fixing" his words came from the context arm.
   - **The mixed recording stays a required fallback** (Steven): no tracks, equipment problems, a partial set, a failed window, or forced by a flag. The full list is in ADR-0010.
   - `score` in `scripts/spike_per_track.py` reproduces the numbers.
-- ⭐ **NEXT: `jld-8nv.1`** (track discovery, validation, path selection with the fallback), then `.2` (per-track transcription + merge), `.3` (ghost filter, per-window gates and fallback), `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). The spike script is the code to lift from.
+- ✅ **`jld-8nv.1` done (2026-10-28):** `tracks.py` chooses the Pass A path and says why (`[tracks] per-track: …` / `[tracks] mixed: falling back … <reason>`), and saves `work/<date>/tracks/selection.json` + `energy.npz`.
+  - `--mixed` / `--per-track` force a path.
+  - 15 tests, one per fallback trigger.
+  - Real lessons: 10/14 and 10/25 choose per-track; 10/5 falls back (no tracks). About 10 s per run.
+  - The smoke test passes on the mixed path.
+  - ADR clarified: a missing shared-sound track only warns.
+  - Pass A still runs on the mix until `.2` lands.
+- ⭐ **NEXT: `jld-8nv.2`**, then (per-track transcription + merge), `.3` (ghost filter, per-window gates and fallback), `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). The spike script is the code to lift from.
 - `jld-ec6`, `jld-beb` and `jld-lg6` are re-scoped to the fallback path. `jld-dik` (run detect twice and take the union) is the recall lever: moment counts tied on 10/25.
 
 ## Where we left off (2026-10-17, later — jld-tlc spike run; ADR-0010 proposed then, see above)
