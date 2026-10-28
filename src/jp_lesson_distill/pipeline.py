@@ -6,6 +6,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -33,12 +34,15 @@ from .models import (
     MomentsFile,
     Relisten,
     Segment,
+    TrackTranscript,
     Transcript,
     fmt_ts,
     parse_ts,
 )
 from .quality import WindowReport, evaluate, marker_by_window, marker_verdict
-from .tracks import load_energy, relabel
+from .tracks import identify as identify_tracks
+from .tracks import load_energy, relabel, snap_start
+from .tracks import tracks_dir as tracks_dir_of
 from .tracks import select as select_tracks
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
@@ -152,9 +156,6 @@ def _run(cfg: Config) -> Path | None:
     print(f"[tracks] {selection.path}: {selection.reason}")
     for warning in selection.warnings:
         print(f"[tracks] warning: {warning}")
-    if selection.path == "per-track":
-        print("[tracks] per-track transcription is not built yet (jld-8nv.2); Pass A runs on "
-              "the mixed recording and its speaker labels are checked against the tracks")
 
     # pass A
     def get_client():
@@ -162,10 +163,16 @@ def _run(cfg: Config) -> Path | None:
         client = client or make_client(cfg.stream_timeout)
         return client
 
-    transcript = _pass_a(cfg, work, audio, total, get_client)
-    bounds = window_bounds(total, cfg.window_minutes * 60, cfg.overlap_seconds)
-    print(f"[pass_a] {marker_by_window(transcript.segments, bounds)}")
-    transcript = _relabel(work, transcript, total, bounds)
+    # A cached transcript keeps the path that made it: one made before the tracks were usable
+    # (or before this code) is a mixed transcript, and still gets the label check below.
+    used = _pass_a_path(work) if (work / "transcript.json").exists() else selection.path
+    if used == "per-track":
+        transcript = _pass_a_tracks(cfg, work, audio, total, get_client)
+    else:
+        transcript = _pass_a(cfg, work, audio, total, get_client)
+        bounds = window_bounds(total, cfg.window_minutes * 60, cfg.overlap_seconds)
+        print(f"[pass_a] {marker_by_window(transcript.segments, bounds)}")
+        transcript = _relabel(work, transcript, total, bounds)
 
     # detect
     candidates_path = work / "candidates.json"
@@ -349,6 +356,160 @@ def _relabel(work: Path, transcript: Transcript, total: float,
     return transcript
 
 
+def _pass_a_path(work: Path) -> str:
+    """Which path made the cached transcript.json ("mixed" for one made before this was recorded)."""
+    record = work / "pass_a.json"
+    return json.loads(record.read_text())["path"] if record.exists() else "mixed"
+
+
+def _record_pass_a_path(work: Path, path: str, fallback_windows: list[int] | None = None) -> None:
+    (work / "pass_a.json").write_text(json.dumps(
+        {"path": path, "fallback_windows": fallback_windows or []}, indent=2))
+
+
+TRACK_PROMPTS = {"teacher": prompts.TRACK_TEACHER, "student": prompts.TRACK_STUDENT}
+
+
+def _pass_a_tracks(cfg: Config, work: Path, audio: Path, total: float, get_client) -> Transcript:
+    """Pass A per Zoom participant track (ADR-0010).
+
+    Each window of Soso先生's mic and of Steven's mic is transcribed on its own, the two calls in
+    parallel, so the speaker is whichever file a line came from: no labels to get wrong, and no
+    two voices run together in one segment. Steven's track gets no teacher context (the measured
+    choice). Windows are cut at the mix's offsets and merged by the mix's rule, and every start
+    is then snapped to its own track's sound onset.
+
+    A window whose per-track calls fail after their retries is transcribed from the mix instead,
+    and its labels are repaired from the tracks: the mixed path is the required fallback, per
+    window as well as per lesson. pass_a.json records which windows that happened to.
+    """
+    transcript_path = work / "transcript.json"
+    if transcript_path.exists():
+        print(f"[pass_a] cached: {transcript_path} (per-participant tracks)")
+        return _load(transcript_path, Transcript)
+    energy = load_energy(work)
+    tracks_dir = work / "tracks"
+    win_s = cfg.window_minutes * 60
+    folder = tracks_dir_of(cfg.recording)
+    found = identify_tracks(folder)
+
+    role_windows: dict[str, list[tuple[Path, float]]] = {}
+    for role in TRACK_PROMPTS:
+        prepped = tracks_dir / f"{role}.m4a"
+        if not prepped.exists():
+            print(f"[pass_a] preparing the {role} track ({found[role].name})")
+            prep_audio(found[role], prepped)
+        role_windows[role] = split_windows(prepped, tracks_dir / f"{role}_windows", win_s=win_s,
+                                           overlap_s=cfg.overlap_seconds, total=total)
+    mix_windows = split_windows(audio, work / "windows", win_s=win_s,
+                                overlap_s=cfg.overlap_seconds, total=total)
+    n = len(mix_windows)
+    print(f"[pass_a] per-participant tracks: {n} window(s), teacher and student transcribed "
+          "separately and in parallel")
+
+    parts: list[list[Segment]] = []
+    offsets: list[float] = []
+    fallback: list[int] = []
+    for i, (mix_path, offset) in enumerate(mix_windows, start=1):
+        tag = f"window {i}/{n}"
+        span = f"{fmt_ts(offset)}-{fmt_ts(min(total, offset + win_s) if win_s else total)}"
+        window_s = duration_seconds(mix_path) if n > 1 else total
+        wpath = tracks_dir / f"transcript_w{i:02d}.json"
+        if wpath.exists():
+            print(f"[pass_a] {tag} cached: {wpath}")
+        else:
+            try:
+                segments = _transcribe_tracks_window(cfg, get_client, role_windows, i, tag, span,
+                                                     tracks_dir)
+                _save(wpath, Transcript(segments=segments))
+            except Exception as exc:  # noqa: BLE001 — any failure here has a fallback
+                print(f"[pass_a] {tag}: per-track transcription FAILED ({type(exc).__name__}: "
+                      f"{exc}); transcribing this window from the mixed recording instead")
+                wt = _transcribe_window(cfg, get_client, mix_path, tag, span, window_s,
+                                        work / f"transcript_w{i:02d}.json")
+                _save(wpath, wt)
+                (tracks_dir / f"transcript_w{i:02d}.fallback").write_text("mixed\n")
+        if (tracks_dir / f"transcript_w{i:02d}.fallback").exists():
+            fallback.append(i)
+        parts.append(_load(wpath, Transcript).segments)
+        offsets.append(offset)
+
+    merged = merge_windows(parts, offsets, win_s=win_s, total=total, overlap_s=cfg.overlap_seconds)
+    segments = merged.segments
+    if fallback and energy is not None:
+        # Windows that fell back are mixed transcripts: repair their labels like the mixed path.
+        bounds = window_bounds(total, win_s, cfg.overlap_seconds)
+        fixed, _ = relabel(segments, energy, total, bounds)
+        own = [bounds[w - 1] for w in fallback]
+        segments = [f if any(a <= parse_ts(s.start) < b for a, b in own) else s
+                    for s, f in zip(segments, fixed)]
+    transcript = Transcript(segments=_snap_all(segments, energy))
+    _save(transcript_path, transcript)
+    _record_pass_a_path(work, "per-track", fallback)
+    last = parse_ts(transcript.segments[-1].start) if transcript.segments else 0.0
+    by = {r: sum(s.speaker == r for s in transcript.segments) for r in TRACK_PROMPTS}
+    print(f"[pass_a] {len(transcript.segments)} segments ({by['teacher']} teacher, "
+          f"{by['student']} student), last at {fmt_ts(last)} of {fmt_ts(total)}"
+          + (f"; window(s) {', '.join(map(str, fallback))} fell back to the mixed recording"
+             if fallback else ""))
+    return transcript
+
+
+def _transcribe_tracks_window(cfg: Config, get_client, role_windows: dict, i: int, tag: str,
+                              span: str, tracks_dir: Path) -> list[Segment]:
+    """Both mic tracks of one window, in parallel, as speaker-labelled segments (window-relative)."""
+    client = get_client()
+
+    def one(role: str) -> TrackTranscript:
+        cache = tracks_dir / f"{role}_w{i:02d}.json"
+        if cache.exists():
+            return _load(cache, TrackTranscript)
+        path, _ = role_windows[role][i - 1]
+        result: TrackTranscript = generate(
+            client, cfg.model, [upload_audio(client, path), TRACK_PROMPTS[role]], TrackTranscript,
+            thinking_level=cfg.pass_a_thinking,
+            debug_dump=tracks_dir / f"pass_a_partial_{role}_w{i:02d}.json")
+        _save(cache, result)
+        return result
+
+    print(f"[pass_a] {tag} {span}: transcribing the teacher and student tracks with {cfg.model}",
+          flush=True)
+    with ThreadPoolExecutor(max_workers=len(TRACK_PROMPTS)) as pool:
+        futures = {role: pool.submit(one, role) for role in TRACK_PROMPTS}
+        results = {role: f.result() for role, f in futures.items()}
+    segments = []
+    for role, tt in results.items():
+        for s in tt.segments:
+            # Played audio on a mic (he played it out of his speakers) is not his speech; until
+            # the transcript has a speaker value for it (ADR-0011, jld-8nv.4) it is marked in text.
+            text = f"（再生音声）{s.text}" if s.played else s.text
+            segments.append(Segment(start=s.start, speaker=role, text=text, uncertain=s.uncertain))
+    segments.sort(key=lambda s: _start_or_inf(s.start))
+    print(f"[pass_a] {tag}: {sum(s.speaker == 'teacher' for s in segments)} teacher + "
+          f"{sum(s.speaker == 'student' for s in segments)} student segments", flush=True)
+    return segments
+
+
+def _start_or_inf(start: str) -> float:
+    try:
+        return parse_ts(start)
+    except ValueError:
+        return float("inf")
+
+
+def _snap_all(segments: list[Segment], energy) -> list[Segment]:
+    """Snap every start to its own speaker's track, then re-sort by the snapped time."""
+    if energy is None:
+        return segments
+    timed = []
+    for s in segments:
+        t = parse_ts(s.start)
+        db = energy.get(s.speaker)
+        timed.append((snap_start(db, t) if db is not None else t, s))
+    timed.sort(key=lambda pair: pair[0])
+    return [s.model_copy(update={"start": fmt_ts(t)}) for t, s in timed]
+
+
 def _pass_a(cfg: Config, work: Path, audio: Path, total: float, get_client) -> Transcript:
     """Transcribe the recording window by window and merge (see ADR-0005).
 
@@ -389,6 +550,7 @@ def _pass_a(cfg: Config, work: Path, audio: Path, total: float, get_client) -> T
     transcript = merge_windows(parts, offsets, win_s=win_s, total=total,
                                overlap_s=cfg.overlap_seconds)
     _save(transcript_path, transcript)
+    _record_pass_a_path(work, "mixed")
     last = parse_ts(transcript.segments[-1].start) if transcript.segments else 0.0
     print(f"[pass_a] {len(transcript.segments)} segments, "
           f"last at {fmt_ts(last)} of {fmt_ts(total)}")

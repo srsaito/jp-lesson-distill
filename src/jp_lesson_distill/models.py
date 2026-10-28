@@ -41,6 +41,19 @@ class Transcript(BaseModel):
     segments: list[Segment]
 
 
+# --- per-track Pass A (ADR-0010): one speaker per call, so no speaker field ---
+
+class TrackSegment(BaseModel):
+    start: str = Field(description="Utterance start time from the beginning of the recording, 'MM:SS'")
+    text: str
+    uncertain: bool = Field(default=False, description="True if the words could not be made out clearly")
+    played: bool = Field(default=False, description="True for recorded audio played back, not live speech")
+
+
+class TrackTranscript(BaseModel):
+    segments: list[TrackSegment]
+
+
 # --- Detect ---
 
 class Candidate(BaseModel):
