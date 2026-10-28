@@ -6,14 +6,14 @@ from __future__ import annotations
 import datetime as dt
 import json
 import shutil
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import prompts
 from .archive import archive_lesson
 from .board import find_video, run_board
 from .board import notes as board_notes
-from .audio import clip_audio, duration_seconds, prep_audio, split_windows
+from .audio import clip_audio, duration_seconds, prep_audio, split_windows, window_starts
 from .gemini import (
     CALL_FAILED,
     DEFAULT_MODEL,
@@ -37,7 +37,8 @@ from .models import (
     fmt_ts,
     parse_ts,
 )
-from .quality import WindowReport, evaluate, marker_verdict
+from .quality import WindowReport, evaluate, marker_by_window, marker_verdict
+from .tracks import load_energy, relabel
 from .tracks import select as select_tracks
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
@@ -152,8 +153,8 @@ def _run(cfg: Config) -> Path | None:
     for warning in selection.warnings:
         print(f"[tracks] warning: {warning}")
     if selection.path == "per-track":
-        print("[tracks] per-track transcription is not built yet (jld-8nv.2); "
-              "Pass A runs on the mixed recording")
+        print("[tracks] per-track transcription is not built yet (jld-8nv.2); Pass A runs on "
+              "the mixed recording and its speaker labels are checked against the tracks")
 
     # pass A
     def get_client():
@@ -162,6 +163,9 @@ def _run(cfg: Config) -> Path | None:
         return client
 
     transcript = _pass_a(cfg, work, audio, total, get_client)
+    bounds = window_bounds(total, cfg.window_minutes * 60, cfg.overlap_seconds)
+    print(f"[pass_a] {marker_by_window(transcript.segments, bounds)}")
+    transcript = _relabel(work, transcript, total, bounds)
 
     # detect
     candidates_path = work / "candidates.json"
@@ -287,6 +291,62 @@ def _run(cfg: Config) -> Path | None:
         print(f"[emit] {dest} — {sum(bool(m.board) for m in out.moments)} of {len(out.moments)} "
               "moments now carry board lines")
     return dest
+
+
+def window_bounds(total: float, win_s: float, overlap_s: float) -> list[tuple[float, float]]:
+    """The stretch of the merged transcript each Pass A window owns (the merge's midpoint rule)."""
+    starts = window_starts(total, win_s, overlap_s)
+    if not starts:
+        return [(0.0, total)]
+    ends = [min(total, s + win_s) for s in starts]
+    cuts = [(starts[i + 1] + ends[i]) / 2 for i in range(len(starts) - 1)]
+    return list(zip([0.0, *cuts], [*cuts, total]))
+
+
+def _relabel(work: Path, transcript: Transcript, total: float,
+             bounds: list[tuple[float, float]]) -> Transcript:
+    """Check the mixed transcript's speaker labels against the tracks, and fix the clear errors.
+
+    jld-ec6: on 10/14 a whole window came back with teacher and student swapped, the address
+    forms said "consistent", and the lesson lost 10 of 22 moments. Each mic track hears only its
+    own speaker, so where one track clearly dominates a segment the speaker is known. Flipped
+    labels are written into transcript.json (the original is kept as
+    transcript.before_relabel.json) before detect reads it. Runs once per lesson; the report in
+    tracks/relabel.json marks it done.
+    """
+    report_path = work / "tracks" / "relabel.json"
+    if report_path.exists():
+        print(f"[relabel] cached: {report_path}")
+        return transcript
+    energy = load_energy(work)
+    if energy is None:
+        print("[relabel] no usable per-participant tracks: speaker labels are checked by "
+              "address forms only")
+        return transcript
+    segments, checks = relabel(transcript.segments, energy, total, bounds)
+    for c in checks:
+        rate = c.agreement
+        verdict = ("" if rate is None or rate >= 0.5
+                   else " — this window came back mostly INVERTED")
+        print(f"[relabel] w{c.window:02d} {fmt_ts(c.start_s)}-{fmt_ts(c.end_s)}: "
+              f"{c.agree}/{c.agree + c.flipped} labels agree with the tracks, {c.flipped} flipped, "
+              f"{c.undecided} undecided (overlap or two voices in one segment), "
+              f"{c.played} over playback{verdict}")
+    flipped = sum(c.flipped for c in checks)
+    agree = sum(c.agree for c in checks)
+    print(f"[relabel] {flipped} of {len(segments)} segments relabelled from the tracks "
+          f"({agree}/{agree + flipped} already agreed)")
+    if flipped:
+        shutil.copyfile(work / "transcript.json", work / "transcript.before_relabel.json")
+        transcript = Transcript(segments=segments)
+        _save(work / "transcript.json", transcript)
+        if (work / "candidates.json").exists():
+            print("[relabel] WARNING: candidates.json was detected from the old labels; delete it "
+                  "(and moments.json) to re-detect from the relabelled transcript")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps({"flipped": flipped, "windows": [asdict(c) for c in checks]},
+                                      indent=2))
+    return transcript
 
 
 def _pass_a(cfg: Config, work: Path, audio: Path, total: float, get_client) -> Transcript:
