@@ -4,6 +4,45 @@
 - This pipeline uses its **own Google Cloud project ("Gemini Project"**, Tier 1 paid, **$100/mo spend cap**) via `GEMINI_API_KEY` in the repo's gitignored `.env` — which overrides shell env (the shell's key belongs to the **FlashGen project, $20/mo cap**; both under the same billing account, $250 account cap). Verified working.
 - The 7/9–7/10 "rate limiting" mystery: an auto-set experimental **$3.87/mo spend cap** on the FlashGen project — hit mid-run and surfaced as 429s. Not free-tier RPM (the account was Tier 1 all along).
 
+## Where we left off (2026-10-27 — ADR-0010 ACCEPTED; jld-tlc closed; build filed as epic jld-8nv)
+- ⭐ **Decided (Steven's ears, two blind kits, 105 clips):**
+  - Pass A goes **per track** when Zoom's tracks are present: per-track beats the mixed recording on his own words, 30–7 and 34–4.
+  - **Steven's track gets no teacher context**: 24–17, and every case of the model "fixing" his words came from the context arm.
+  - **The mixed recording stays a required fallback** (Steven): no tracks, equipment problems, a partial set, a failed window, or forced by a flag. The full list is in ADR-0010.
+  - `score` in `scripts/spike_per_track.py` reproduces the numbers.
+- ⭐ **NEXT: `jld-8nv.1`** (track discovery, validation, path selection with the fallback), then `.2` (per-track transcription + merge), `.3` (ghost filter, per-window gates and fallback), `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). The spike script is the code to lift from.
+- `jld-ec6`, `jld-beb` and `jld-lg6` are re-scoped to the fallback path. `jld-dik` (run detect twice and take the union) is the recall lever: moment counts tied on 10/25.
+
+## Where we left off (2026-10-17, later — jld-tlc spike run; ADR-0010 proposed then, see above)
+- **What the spike measured** (10/14 and 10/12, window 3 each, all in ADR-0010):
+  - A2 splits 9 of 22 and 18 of 41 of A0's energy-ambiguous segments into real turns.
+  - Every A2 start lands on its own speaker's voice; A0 starts are 14–25 s off in places, which is Pass B's whole ±15 s pad.
+  - The share track gives the 会話 as clean, labelled lines (`jld-lg6` solved when tracks exist).
+  - Fresh detect + Pass B moments, A0/A1/A2/A2c: 8/8/9/6 (10/14), 8/6/11/10 (10/12). Counts at window scale are within detect's own variance. The whole-lesson 12→22 does not reproduce over one window.
+- ⭐ **10/14 verbatim kit scored (2026-10-26, Steven's ears, 45 clips).**
+  - Per-track beats the mix (relabelled): A2 12–2, A2c 12–1. Sign test p ≈ 0.01 and 0.003.
+  - A2 vs A2c ties 4–4, but both "corrections" of Steven's words came from A2, the context arm (on- → only; できたん、できたの → できたんだって).
+  - ⇒ Recommendation: accept ADR-0010 with **no context**. The 10/12 kit is optional, a check on the context call.
+  - **10/12 kit scored too (2026-10-27, 60 clips).** Notes parsed for co-winners (`1 and 3 tie`), both kits together:
+    - per-track beats the mix: A2 30–7, A2c 34–4;
+    - **no context beats context 24–17** (10/12 alone 16–8, 10/14 8–9).
+    - Steven's notes say the same thing qualitatively. A2c keeps the stutters and cut-offs (しゃ…社長, the た before a word, a cut-off い for 意味, the "s" in "ones"); A2 drops them or "guesses what I meant". Context never clearly helped.
+    - ⇒ Accept ADR-0010 with no context, pending Steven's go-ahead.
+  - **REQUIREMENT (Steven):** the mixed-recording path stays a fully supported fallback (no tracks, equipment problems, a partial set, a failing window, or forced by a flag). It is spelled out in ADR-0010's Decision.
+- **2026-10-25 run as the first whole-lesson spike** (all 4 windows; outputs in `work/spike-tlc/20261025/`).
+  - Moments tie: A0/A1/A2/A2c 35/32/33/30.
+  - A2 splits 24 of 91 ambiguous segments.
+  - Only 4 hallucinated lines.
+  - The mixed transcript was unusually good that day: 87% label agreement, starts about 1 s off. The address-form check still warned (14/24), driven by window 1 (76%).
+  - A third kit is cut: `play --date 20261025 --window 1` (44 clips). Optional; 10/14 + 10/12 decide the ADR.
+  - The production run for 10/25 is done and in `_raw/` (23 moments, board with 13 slides).
+  - **Gemini billing:** on 10/25 the project hit `402 — prepayment credits depleted`. Steven topped it up. It is prepaid now, not just a spending cap.
+- **Surprises worth keeping:**
+  1. Per-track calls **hallucinate backchannels into silence** (teacher うん every 4 s while Steven talks). Every such line sits on digital silence, so an energy check deletes it.
+  2. **Steven's soft speech is at −33 to −55 dB**, so the −45 dB relabel threshold misses it. "Any sound" is > −70 dB.
+  3. **Teacher context can normalise Steven** (one clear false start smoothed away on 10/12), but the no-context arm was erratic run to run (one call reported no thinking, answered in 4 s and lumped his lines). The kit decides.
+- Spike code: `scripts/spike_per_track.py` (stages transcribe / compare / detect / kit / play / score). Outputs: `work/spike-tlc/<date>/w03/` (`transcript_A*.md`, `student_side_by_side.md`, `compare.json`, `moments_A*.json`), archived to OneDrive. Off the production path: `PASS_A`, model and thinking levels untouched.
+
 ## Where we left off (2026-10-17 — Zoom per-participant tracks change the plan; open beads ranked)
 - ⭐⭐ **Zoom's per-participant recording is ON (since 10/8)**, which makes the 10/8 line below ("off on Steven's machine… untested") stale. Every lesson since 10/8 has `…_class_audio/` beside `…_class_audio.m4a`, three m4a files the same length as the mix: `audioSteveSaito1…` (Steven's mic), `audio末武創一2…` (Soso先生's mic), `audio末武創一3…` (the computer sound he shares with the screen = textbook playback). ⚠️ **Identify them by exact display-name prefix** — a loose glob like `audio*3[0-9]*` also matches digits inside the meeting id and picks the wrong file.
 - **Measured from loudness alone (0.1 s RMS, active > −45 dB):** the third file is active only 2–5% of a lesson, always during playback, and **both mics are silent during every playback span** (10/8, 10/12, 10/14). So playback does not bleed onto the teacher track. Edge case: if he ever plays audio out of his speakers instead of sharing sound, it would land on his mic.
