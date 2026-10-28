@@ -15,6 +15,11 @@
   - Per-track beats the mix (relabelled): A2 12–2, A2c 12–1. Sign test p ≈ 0.01 and 0.003.
   - A2 vs A2c ties 4–4, but both "corrections" of Steven's words came from A2, the context arm (on- → only; できたん、できたの → できたんだって).
   - ⇒ Recommendation: accept ADR-0010 with **no context**. The 10/12 kit is optional, a check on the context call.
+  - **10/12 kit scored too (2026-10-27, 60 clips).** Notes parsed for co-winners (`1 and 3 tie`), both kits together:
+    - per-track beats the mix: A2 30–7, A2c 34–4;
+    - **no context beats context 24–17** (10/12 alone 16–8, 10/14 8–9).
+    - Steven's notes say the same thing qualitatively. A2c keeps the stutters and cut-offs (しゃ…社長, the た before a word, a cut-off い for 意味, the "s" in "ones"); A2 drops them or "guesses what I meant". Context never clearly helped.
+    - ⇒ Accept ADR-0010 with no context, pending Steven's go-ahead.
   - **REQUIREMENT (Steven):** the mixed-recording path stays a fully supported fallback (no tracks, equipment problems, a partial set, a failing window, or forced by a flag). It is spelled out in ADR-0010's Decision.
 - **2026-10-25 run as the first whole-lesson spike** (all 4 windows; outputs in `work/spike-tlc/20261025/`).
   - Moments tie: A0/A1/A2/A2c 35/32/33/30.
