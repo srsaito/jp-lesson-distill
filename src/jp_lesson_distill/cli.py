@@ -59,6 +59,14 @@ def main() -> None:
                         "it is a video, else …_class_video.mp4 beside …_class_audio.m4a)")
     p.add_argument("--no-board", action="store_true",
                    help="skip the board timeline (reading the shared screen takes 10–20 minutes)")
+    path = p.add_mutually_exclusive_group()
+    path.add_argument("--per-track", dest="tracks_mode", action="store_const", const="per-track",
+                      help="require Zoom's per-participant tracks (…_class_audio/ beside the "
+                           "recording); stop with the reason if they cannot be used (ADR-0010)")
+    path.add_argument("--mixed", dest="tracks_mode", action="store_const", const="mixed",
+                      help="transcribe the mixed recording even when per-participant tracks exist "
+                           "(the fallback path, for regression checks and comparisons)")
+    p.set_defaults(tracks_mode="auto")
 
     # distill board — the board timeline by itself (ADR-0008)
     bd = sub.add_parser("board", help="read the lesson video's shared screen into a board timeline")
@@ -160,6 +168,7 @@ def main() -> None:
                              else args.pass_a_thinking.upper()),
             archive=not args.no_archive,
             board=not args.no_board, video=args.video,
+            tracks_mode=args.tracks_mode,
         ))
     except KeyboardInterrupt:
         sys.exit(130)

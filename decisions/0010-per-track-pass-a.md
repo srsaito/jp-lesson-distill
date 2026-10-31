@@ -71,7 +71,7 @@ With it:
 
 - **⭐ REQUIREMENT: the mixed-recording path stays a fully supported fallback** (Steven, 2026-10-26). Per-track transcription is an upgrade for lessons that have the tracks, never a dependency. The pipeline must still produce `moments.json` from the mix alone, with the quality it has today: windowed Pass A, the sanity gates, the address-form check, and the energy relabel (A1) when tracks exist but cannot be transcribed. It falls back when:
   - **No tracks:** lessons before 2026-10-08, or Zoom's per-participant setting turned off.
-  - **Equipment problems:** a track missing, empty, corrupt or unreadable; a length that does not match the mix (within 2 s); a role that cannot be identified by exact display-name prefix; or a mic track that is silent for the whole lesson. A silent share track is normal (no playback) and only warns.
+  - **Equipment problems:** a track missing, empty, corrupt or unreadable; a length that does not match the mix (within 2 s); a mic role that cannot be identified by exact display-name prefix, or two files matching one role; or a mic track that is silent for the whole lesson. A silent share track is normal (no playback) and only warns. So does a missing share track (clarified 2026-10-28, jld-8nv.1): without shared sound there is no playback in the recording at all, so the per-track path loses nothing.
   - **A partial set:** any mic track missing means the mixed path for the whole lesson, not a guess at the missing speaker.
   - **Per-track transcription failing** on a window after its retries: that window falls back to the mixed path, and the merged transcript says which windows did.
   - **Asked for:** a CLI flag forces the mixed path (and another forces per-track), for regression checks and comparisons.

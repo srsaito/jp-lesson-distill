@@ -38,6 +38,7 @@ from .models import (
     parse_ts,
 )
 from .quality import WindowReport, evaluate, marker_verdict
+from .tracks import select as select_tracks
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
 BOARD_BEFORE, BOARD_AFTER = 30.0, 90.0  # seconds: typing trails the speech it answers (ADR-0009)
@@ -70,6 +71,9 @@ class Config:
     # recording; a lesson with no video simply has no board.
     board: bool = True
     video: Path | None = None
+    # Pass A path (ADR-0010): "auto" uses the Zoom per-participant tracks when they are usable
+    # and falls back to the mixed recording otherwise; "per-track" / "mixed" force one.
+    tracks_mode: str = "auto"
 
     @property
     def lesson_date(self) -> str:
@@ -140,6 +144,16 @@ def _run(cfg: Config) -> Path | None:
         prep_audio(cfg.recording, audio)
     total = duration_seconds(audio)
     print(f"[prep] duration {fmt_ts(total)}")
+
+    # Which Pass A path (ADR-0010). The mixed path is the required fallback, so every way the
+    # tracks can be unusable ends here with a reason, never with a failed run.
+    selection = select_tracks(cfg.recording, total, cfg.tracks_mode, work)
+    print(f"[tracks] {selection.path}: {selection.reason}")
+    for warning in selection.warnings:
+        print(f"[tracks] warning: {warning}")
+    if selection.path == "per-track":
+        print("[tracks] per-track transcription is not built yet (jld-8nv.2); "
+              "Pass A runs on the mixed recording")
 
     # pass A
     def get_client():
