@@ -13,3 +13,7 @@ __pycache__/
 # every commit from a secondary checkout (jld-78z, fixed by bd 1.2.2). Kept so a
 # downgrade cannot quietly reintroduce it.
 /issues.jsonl
+
+# Claude Code session worktrees, and the lock bd takes while migrating
+.claude/worktrees/
+.beads.gate.lock
