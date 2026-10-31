@@ -1,0 +1,344 @@
+[
+ {
+  "window": "20261012 w3 teacher",
+  "speech_s": 569.5,
+  "segments": 106,
+  "chars": 2764,
+  "max_speech_gap_s": 24.0,
+  "ghosts": 2,
+  "ok": true
+ },
+ {
+  "window": "20261012 w3 steven_noctx",
+  "speech_s": 237.6,
+  "segments": 151,
+  "chars": 1331,
+  "max_speech_gap_s": 6.9,
+  "ghosts": 1,
+  "ok": true
+ },
+ {
+  "window": "20261012 w3 steven_ctx",
+  "speech_s": 237.6,
+  "segments": 98,
+  "chars": 1197,
+  "max_speech_gap_s": 10.3,
+  "ghosts": 1,
+  "ok": true
+ },
+ {
+  "window": "20261014 w3 teacher",
+  "speech_s": 447.7,
+  "segments": 61,
+  "chars": 2088,
+  "max_speech_gap_s": 43.6,
+  "ghosts": 4,
+  "ok": true
+ },
+ {
+  "window": "20261014 w3 steven_noctx",
+  "speech_s": 314.6,
+  "segments": 47,
+  "chars": 1550,
+  "max_speech_gap_s": 54.4,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261014 w3 steven_ctx",
+  "speech_s": 314.6,
+  "segments": 77,
+  "chars": 1684,
+  "max_speech_gap_s": 32.0,
+  "ghosts": 2,
+  "ok": true
+ },
+ {
+  "window": "20261025 w1 teacher",
+  "speech_s": 506.5,
+  "segments": 45,
+  "chars": 1935,
+  "max_speech_gap_s": 46.5,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w1 steven_noctx",
+  "speech_s": 471.4,
+  "segments": 62,
+  "chars": 1907,
+  "max_speech_gap_s": 35.2,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w1 steven_ctx",
+  "speech_s": 471.4,
+  "segments": 49,
+  "chars": 1726,
+  "max_speech_gap_s": 35.2,
+  "ghosts": 1,
+  "ok": true
+ },
+ {
+  "window": "20261025 w2 teacher",
+  "speech_s": 395.9,
+  "segments": 95,
+  "chars": 1578,
+  "max_speech_gap_s": 20.2,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w2 steven_noctx",
+  "speech_s": 572.0,
+  "segments": 49,
+  "chars": 2342,
+  "max_speech_gap_s": 42.7,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w2 steven_ctx",
+  "speech_s": 572.0,
+  "segments": 43,
+  "chars": 2362,
+  "max_speech_gap_s": 76.2,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w3 teacher",
+  "speech_s": 443.1,
+  "segments": 71,
+  "chars": 1945,
+  "max_speech_gap_s": 29.7,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w3 steven_noctx",
+  "speech_s": 555.5,
+  "segments": 60,
+  "chars": 2176,
+  "max_speech_gap_s": 42.3,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w3 steven_ctx",
+  "speech_s": 555.5,
+  "segments": 62,
+  "chars": 2077,
+  "max_speech_gap_s": 32.8,
+  "ghosts": 3,
+  "ok": true
+ },
+ {
+  "window": "20261025 w4 teacher",
+  "speech_s": 135.9,
+  "segments": 13,
+  "chars": 666,
+  "max_speech_gap_s": 23.6,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w4 steven_noctx",
+  "speech_s": 101.2,
+  "segments": 35,
+  "chars": 418,
+  "max_speech_gap_s": 15.3,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261025 w4 steven_ctx",
+  "speech_s": 101.2,
+  "segments": 27,
+  "chars": 412,
+  "max_speech_gap_s": 15.3,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w1 teacher",
+  "speech_s": 269.7,
+  "segments": 67,
+  "chars": 1154,
+  "max_speech_gap_s": 15.4,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w1 steven_noctx",
+  "speech_s": 682.0,
+  "segments": 27,
+  "chars": 2739,
+  "max_speech_gap_s": 73.3,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w1 steven_ctx",
+  "speech_s": 682.0,
+  "segments": 78,
+  "chars": 2709,
+  "max_speech_gap_s": 70.0,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w2 teacher",
+  "speech_s": 491.6,
+  "segments": 60,
+  "chars": 1964,
+  "max_speech_gap_s": 27.7,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w2 steven_noctx",
+  "speech_s": 430.7,
+  "segments": 93,
+  "chars": 1692,
+  "max_speech_gap_s": 17.5,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w2 steven_ctx",
+  "speech_s": 430.7,
+  "segments": 62,
+  "chars": 1669,
+  "max_speech_gap_s": 22.4,
+  "ghosts": 1,
+  "ok": true
+ },
+ {
+  "window": "20261026 w3 teacher",
+  "speech_s": 481.4,
+  "segments": 81,
+  "chars": 1968,
+  "max_speech_gap_s": 22.3,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w3 steven_noctx",
+  "speech_s": 405.0,
+  "segments": 94,
+  "chars": 1628,
+  "max_speech_gap_s": 19.1,
+  "ghosts": 2,
+  "ok": true
+ },
+ {
+  "window": "20261026 w3 steven_ctx",
+  "speech_s": 405.0,
+  "segments": 84,
+  "chars": 1482,
+  "max_speech_gap_s": 51.1,
+  "ghosts": 19,
+  "ok": false
+ },
+ {
+  "window": "20261026 w4 teacher",
+  "speech_s": 32.6,
+  "segments": 14,
+  "chars": 184,
+  "max_speech_gap_s": 8.8,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w4 steven_noctx",
+  "speech_s": 59.7,
+  "segments": 22,
+  "chars": 248,
+  "max_speech_gap_s": 4.9,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "20261026 w4 steven_ctx",
+  "speech_s": 59.7,
+  "segments": 10,
+  "chars": 232,
+  "max_speech_gap_s": 12.4,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "pipeline-20261026 w1 teacher",
+  "speech_s": 269.7,
+  "segments": 94,
+  "chars": 1202,
+  "max_speech_gap_s": 13.0,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "pipeline-20261026 w1 student",
+  "speech_s": 682.0,
+  "segments": 54,
+  "chars": 2698,
+  "max_speech_gap_s": 70.6,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "pipeline-20261026 w2 teacher",
+  "speech_s": 491.6,
+  "segments": 62,
+  "chars": 1976,
+  "max_speech_gap_s": 33.1,
+  "ghosts": 1,
+  "ok": true
+ },
+ {
+  "window": "pipeline-20261026 w2 student",
+  "speech_s": 430.7,
+  "segments": 64,
+  "chars": 1755,
+  "max_speech_gap_s": 33.7,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "pipeline-20261026 w3 teacher",
+  "speech_s": 481.4,
+  "segments": 192,
+  "chars": 1932,
+  "max_speech_gap_s": 13.6,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "pipeline-20261026 w3 student",
+  "speech_s": 405.0,
+  "segments": 82,
+  "chars": 1594,
+  "max_speech_gap_s": 19.1,
+  "ghosts": 1,
+  "ok": true
+ },
+ {
+  "window": "pipeline-20261026 w4 teacher",
+  "speech_s": 32.6,
+  "segments": 13,
+  "chars": 190,
+  "max_speech_gap_s": 8.8,
+  "ghosts": 0,
+  "ok": true
+ },
+ {
+  "window": "pipeline-20261026 w4 student",
+  "speech_s": 59.7,
+  "segments": 11,
+  "chars": 260,
+  "max_speech_gap_s": 12.4,
+  "ghosts": 0,
+  "ok": true
+ }
+]
