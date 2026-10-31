@@ -203,3 +203,95 @@ def _check(recording: Path, mix_s: float, work: Path | None) -> Selection:
         np.savez_compressed(work / "tracks" / "energy.npz", **energies)
     return Selection("per-track", f"per-participant tracks found and usable in {folder.name}/",
                      tracks=tracks, warnings=warnings)
+
+
+# --- relabelling the mixed transcript from the tracks (jld-ec6) ---
+#
+# The rule that repaired 10/14 (12 -> 22 moments), kept exactly as measured: a segment runs from
+# its start to the next segment's start; it is the student's when Steven's mic is active over
+# 30% of that span and twice as active as the teacher's, the teacher's likewise, and playback
+# when the share track is active over half of it. Anything else is left alone: two voices in
+# one segment (jld-beb) or a boundary in the wrong place, which no relabel can fix.
+RELABEL_ACTIVE_DB = -45.0
+RELABEL_MIN_ACTIVE = 0.3
+RELABEL_DOMINANCE = 2.0
+PLAYBACK_SHARE = 0.5
+
+
+def speaker_from_energy(energy: dict[str, np.ndarray], a: float, b: float) -> str | None:
+    """'student', 'teacher', 'played', or None when the tracks cannot say."""
+    fa, fb = int(a / FRAME_S), int(b / FRAME_S)
+    if fb <= fa:
+        return None
+
+    def active(role: str) -> float:
+        db = energy.get(role)
+        if db is None or fa >= len(db):
+            return 0.0
+        return float((db[fa:fb] > RELABEL_ACTIVE_DB).mean())
+
+    st, te, sh = active("student"), active("teacher"), active("share")
+    if sh > PLAYBACK_SHARE:
+        return "played"
+    if st > RELABEL_MIN_ACTIVE and st > RELABEL_DOMINANCE * te:
+        return "student"
+    if te > RELABEL_MIN_ACTIVE and te > RELABEL_DOMINANCE * st:
+        return "teacher"
+    return None
+
+
+@dataclass
+class WindowCheck:
+    window: int
+    start_s: float
+    end_s: float
+    agree: int = 0      # labels the tracks confirm
+    flipped: int = 0    # labels the tracks contradict (and that were flipped)
+    undecided: int = 0  # segments the tracks cannot settle
+    played: int = 0     # segments over textbook playback (left as they are; jld-lg6)
+
+    @property
+    def agreement(self) -> float | None:
+        n = self.agree + self.flipped
+        return self.agree / n if n else None
+
+
+def relabel(segments: list, energy: dict[str, np.ndarray], total: float,
+            bounds: list[tuple[float, float]]) -> tuple[list, list[WindowCheck]]:
+    """Flip every label the tracks clearly contradict; report per window what they said.
+
+    `segments` are production Segments with absolute "MM:SS" starts; `bounds` are the
+    stretches each Pass A window owns after the merge, because a label inversion is a
+    per-window property (each window is diarized by its own call).
+    """
+    from .models import parse_ts
+
+    starts = [parse_ts(s.start) for s in segments]
+    checks = [WindowCheck(i + 1, round(a, 1), round(b, 1)) for i, (a, b) in enumerate(bounds)]
+    out = []
+    for i, seg in enumerate(segments):
+        a = starts[i]
+        b = starts[i + 1] if i + 1 < len(segments) else total
+        check = next((c for c in checks if c.start_s <= a < c.end_s), checks[-1])
+        truth = speaker_from_energy(energy, a, b)
+        if truth is None:
+            check.undecided += 1
+        elif truth == "played":
+            check.played += 1
+        elif truth == seg.speaker:
+            check.agree += 1
+        else:
+            check.flipped += 1
+            seg = seg.model_copy(update={"speaker": truth})
+        out.append(seg)
+    return out, checks
+
+
+def load_energy(work: Path) -> dict[str, np.ndarray] | None:
+    """The track energy `select` saved, or None when the tracks were not usable."""
+    path = work / "tracks" / "energy.npz"
+    if not path.exists():
+        return None
+    with np.load(path) as data:
+        energy = {k: data[k] for k in data.files}
+    return energy if all(m in energy for m in MICS) else None

@@ -252,6 +252,32 @@ def marker_verdict(segments: list[Segment]) -> str:
     return f"{head} — diarization consistent with the address forms"
 
 
+def marker_by_window(segments: list[Segment], bounds: list[tuple[float, float]]) -> str:
+    """The address-form check per Pass A window (jld-ec6, part 1).
+
+    Each window is diarized by its own call, so an inversion is a per-window property, and the
+    pooled verdict above can read "consistent" while a window with no cues is inverted (10/14:
+    9/11 overall, window 3 almost entirely swapped). This line names the windows nothing checked.
+    """
+    parts, unverified, doubtful = [], [], []
+    for w, (lo, hi) in enumerate(bounds, start=1):
+        inside = [s for s in segments if lo <= parse_ts(s.start) < hi]
+        agree, total = marker_agreement(inside)
+        parts.append(f"w{w:02d} {agree}/{total}" if total else f"w{w:02d} none")
+        if not total:
+            unverified.append(w)
+        elif total >= MARKER_MIN_N and agree / total < MARKER_WARN:
+            doubtful.append(w)
+    line = "address forms by window: " + " · ".join(parts)
+    if doubtful:
+        line += (f" — window{'s' if len(doubtful) > 1 else ''} {', '.join(map(str, doubtful))} "
+                 f"look{'' if len(doubtful) > 1 else 's'} inverted or mixed")
+    if unverified:
+        line += (f" — window{'s' if len(unverified) > 1 else ''} "
+                 f"{', '.join(map(str, unverified))} unverified (no cues)")
+    return line
+
+
 def _first_drop(starts: list[float]) -> float:
     for a, b in zip(starts, starts[1:]):
         if b < a:
