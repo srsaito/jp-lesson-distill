@@ -287,6 +287,32 @@ def relabel(segments: list, energy: dict[str, np.ndarray], total: float,
     return out, checks
 
 
+SNAP_S = 3.0  # how far a model's start may sit from its own track's sound onset
+
+
+def snap_start(db: np.ndarray, s: float) -> float:
+    """Move a model-given start onto its own track's sound onset (0.1 s resolution).
+
+    Gemini's starts are whole seconds and model-generated; the track says when the voice
+    actually began. Inside a stretch of sound, the start of that stretch wins if it is within
+    SNAP_S; otherwise the nearest onset within SNAP_S; otherwise the model's start stands.
+    """
+    act = db > SOUND_DB
+    f = int(s / FRAME_S)
+    if 0 <= f < len(act) and act[f]:
+        g = f
+        while g > 0 and act[g - 1]:
+            g -= 1
+        if s - g * FRAME_S <= SNAP_S:
+            return round(g * FRAME_S, 1)
+    lo = max(1, int((s - SNAP_S) / FRAME_S))
+    hi = min(len(act), int((s + SNAP_S) / FRAME_S) + 1)
+    onsets = [k for k in range(lo, hi) if act[k] and not act[k - 1]]
+    if not onsets:
+        return s
+    return round(min(onsets, key=lambda k: abs(k * FRAME_S - s)) * FRAME_S, 1)
+
+
 def load_energy(work: Path) -> dict[str, np.ndarray] | None:
     """The track energy `select` saved, or None when the tracks were not usable."""
     path = work / "tracks" / "energy.npz"

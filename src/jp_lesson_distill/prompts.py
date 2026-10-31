@@ -26,6 +26,53 @@ exactly where the student made a mistake.
 Transcribe the ENTIRE recording, start to finish."""
 
 
+# --- per-track Pass A (ADR-0010): one participant's microphone at a time ---
+#
+# The same verbatim rules as PASS_A, minus the who-spoke task: the file says who. Steven's track
+# is deliberately transcribed WITHOUT the teacher's words as context. Measured by ear on two
+# lessons, context made the model write what he meant instead of what he said (on- -> only,
+# しゃ…社長 -> 社長), and no-context won 24-17. Rule 8 exists because per-track calls invent
+# backchannels (うん) over the silences where the other person was talking.
+
+TRACK_RULES = """Produce a complete transcript of THIS SPEAKER as JSON segments. Rules:
+1. VERBATIM. Preserve errors exactly as spoken: wrong particles, wrong conjugations, wrong words, \
+false starts, fillers (えーと、あの、あー…), self-corrections, trailing off. NEVER fix or smooth what \
+was said. If something ungrammatical is said, transcribe the ungrammatical version.
+2. If a word is mispronounced, render what you actually HEARD in kana, not the intended word.
+3. Write Japanese in normal kana/kanji orthography; English as spoken. Mixed-language segments are fine.
+4. One segment per utterance. Start a new segment whenever the speaker pauses for more than about \
+one and a half seconds (that is usually where the other person spoke), and split utterances longer \
+than about 30 seconds.
+5. "start" is when the utterance begins, measured from the beginning of this recording, formatted \
+"MM:SS".
+6. Set "uncertain": true when you could not make the words out clearly (mumbling, garble). Do not \
+guess-correct — write your best hearing and flag it.
+7. Set "played": true for recorded audio played back (a textbook recording with other voices, a \
+video) rather than this person speaking live.
+8. The silences on this track are where the OTHER person was talking. Never write anything for a \
+silence: if you hear nothing, there is no segment.
+
+Transcribe the ENTIRE recording, start to finish."""
+
+TRACK_TEACHER = f"""You are transcribing one participant's microphone track from a one-on-one Japanese \
+lesson recorded over Zoom. Each participant was recorded to a separate file, so only ONE voice is on \
+this track: the teacher, Soso先生, a native Japanese speaker who speaks mostly Japanese, occasionally \
+English. The student's voice is on a different file; whenever the teacher is not speaking this track \
+is silent.
+
+{TRACK_RULES}"""
+
+TRACK_STUDENT = f"""You are transcribing one participant's microphone track from a one-on-one Japanese \
+lesson recorded over Zoom. Each participant was recorded to a separate file, so only ONE voice is on \
+this track: the student, Steven, a native English speaker learning Japanese (intermediate), who \
+speaks Japanese with learner mistakes and sometimes switches to English. The teacher's voice is on a \
+different file; whenever the student is not speaking this track is silent.
+
+His mistakes are the whole point of this transcript: it is used to find the errors he made.
+
+{TRACK_RULES}"""
+
+
 DETECT = f"""Below is a diarized, timestamped transcript of a one-on-one Japanese lesson.
 {SPEAKERS}
 
