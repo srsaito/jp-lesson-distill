@@ -4,6 +4,11 @@
 - This pipeline uses its **own Google Cloud project ("Gemini Project"**, Tier 1 paid, **$100/mo spend cap**) via `GEMINI_API_KEY` in the repo's gitignored `.env` — which overrides shell env (the shell's key belongs to the **FlashGen project, $20/mo cap**; both under the same billing account, $250 account cap). Verified working.
 - The 7/9–7/10 "rate limiting" mystery: an auto-set experimental **$3.87/mo spend cap** on the FlashGen project — hit mid-run and surfaced as 429s. Not free-tier RPM (the account was Tier 1 all along).
 
+## Lesson data point (2026-10-26) — another `jld-ec6` case, from the vault side
+- **10/26: the address-form check said `6/6 — consistent`, but the Zoom tracks give 20–40 min at 77%** (95% / 77% / 94% by window, 192/221 = 86.9% overall); 28:05–39:12 (the まま and のにいい drills) is flipped. After flipping the 29 contradicted segments, detect + Pass B went **12 → 16 moments**. Originals are in `work/20261026/original-labels/`; the throwaway scripts are `work/20261026/trackcheck.py` and `flip.py` (−45 dB, 0.1 s RMS; reproduces 10/25 at 86.4%).
+- So it is now 3 of the 4 track-checked lessons where a partial inversion cost moments (10/14 −10, 10/26 −4) **or** where the check misjudged in the other direction (10/25 said unreliable at 83%). The check pools cues across windows; window 3 here had 1 cue.
+- **`jld-hc9.3.3` data, corrected:** the note first recorded Pass A first bytes as 484 s and 542 s, past the 300 s timeout, and asked whether the timer is armed before the first byte. That is the same 10× log misreading as 2026-09-25. File times show window 1's transcript landed 71 s after the audio and window 2's 84 s after window 1, so the first bytes were **48.4 s and 54.2 s**, then 26.9 s, 3.8 s (the window 3 retry) and 7.5 s; detect about 39 s. Nothing waited past 300 s, so there is no timer question here.
+
 ## Where we left off (2026-10-30 — per-track Pass A is LIVE on main; ADR-0010 accepted; epic jld-8nv in progress)
 - ⭐ **Decided (Steven's ears, two blind kits, 105 clips):**
   - Pass A goes **per track** when Zoom's tracks are present: per-track beats the mixed recording on his own words, 30–7 and 34–4.
