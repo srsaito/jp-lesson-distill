@@ -4,7 +4,12 @@
 - This pipeline uses its **own Google Cloud project ("Gemini Project"**, Tier 1 paid, **$100/mo spend cap**) via `GEMINI_API_KEY` in the repo's gitignored `.env` — which overrides shell env (the shell's key belongs to the **FlashGen project, $20/mo cap**; both under the same billing account, $250 account cap). Verified working.
 - The 7/9–7/10 "rate limiting" mystery: an auto-set experimental **$3.87/mo spend cap** on the FlashGen project — hit mid-run and surfaced as 429s. Not free-tier RPM (the account was Tier 1 all along).
 
-## Where we left off (2026-10-27 — ADR-0010 ACCEPTED; jld-tlc closed; build filed as epic jld-8nv)
+## Lesson data point (2026-10-26) — another `jld-ec6` case, from the vault side
+- **10/26: the address-form check said `6/6 — consistent`, but the Zoom tracks give 20–40 min at 77%** (95% / 77% / 94% by window, 192/221 = 86.9% overall); 28:05–39:12 (the まま and のにいい drills) is flipped. After flipping the 29 contradicted segments, detect + Pass B went **12 → 16 moments**. Originals are in `work/20261026/original-labels/`; the throwaway scripts are `work/20261026/trackcheck.py` and `flip.py` (−45 dB, 0.1 s RMS; reproduces 10/25 at 86.4%).
+- So it is now 3 of the 4 track-checked lessons where a partial inversion cost moments (10/14 −10, 10/26 −4) **or** where the check misjudged in the other direction (10/25 said unreliable at 83%). The check pools cues across windows; window 3 here had 1 cue.
+- **`jld-hc9.3.3` data, corrected:** the note first recorded Pass A first bytes as 484 s and 542 s, past the 300 s timeout, and asked whether the timer is armed before the first byte. That is the same 10× log misreading as 2026-09-25. File times show window 1's transcript landed 71 s after the audio and window 2's 84 s after window 1, so the first bytes were **48.4 s and 54.2 s**, then 26.9 s, 3.8 s (the window 3 retry) and 7.5 s; detect about 39 s. Nothing waited past 300 s, so there is no timer question here.
+
+## Where we left off (2026-10-30 — per-track Pass A is LIVE on main; ADR-0010 accepted; epic jld-8nv in progress)
 - ⭐ **Decided (Steven's ears, two blind kits, 105 clips):**
   - Pass A goes **per track** when Zoom's tracks are present: per-track beats the mixed recording on his own words, 30–7 and 34–4.
   - **Steven's track gets no teacher context**: 24–17, and every case of the model "fixing" his words came from the context arm.
@@ -16,8 +21,13 @@
   - Real lessons: 10/14 and 10/25 choose per-track; 10/5 falls back (no tracks). About 10 s per run.
   - The smoke test passes on the mixed path.
   - ADR clarified: a missing shared-sound track only warns.
-  - Pass A still runs on the mix until `.2` lands.
-- ⭐ **NEXT: `jld-8nv.2`**, then (per-track transcription + merge), `.3` (ghost filter, per-window gates and fallback), `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). The spike script is the code to lift from.
+- ✅ **`jld-ec6` done:** on the mixed path, speaker labels are checked against the tracks per window and clear errors flipped before detect. It reproduces the 10/14 hand repair exactly (76 of 336). The address-form check now prints per window.
+- ✅ **`jld-8nv.2` done and LIVE (merged 2026-10-30, PRs #19–#21):** with usable tracks, Pass A transcribes each mic separately (Steven's without teacher context), merges, and snaps starts to each voice. A failed window falls back to the mix with labels repaired. `--mixed` restores the old path.
+  - Real 10/26 run (scratch folder): 500 segments, 2 of 572 lines on silence, detect 14 candidates. **No production lesson has run on this path yet**, and the re-listen stage was skipped in that check, so read the next real run's log closely.
+  - The ghost check must use the model's ORIGINAL starts; snapping moves a ghost onto nearby sound. Most 「うん」 on the teacher track are real backchannels.
+  - A call on 10/26's 2-minute tail window spent 62,914 thinking tokens. It finished; the per-window fallback would catch a failure. Noted on `.3`.
+- **Spike lesson on recall:** 10/26's card-free comparison found about 7 possible new moments. Steven confirmed 18:07, 46:01 and 53:31 by ear. A second detect pass on the same transcript also finds real moments (`jld-dik`), and treating a model's hearing as a quote is a mistake: check by ear.
+- ⭐ **NEXT:** `jld-8nv.3` (ghost filter, per-track gates), `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). Separately `jld-dik` (detect twice, union).
 - `jld-ec6`, `jld-beb` and `jld-lg6` are re-scoped to the fallback path. `jld-dik` (run detect twice and take the union) is the recall lever: moment counts tied on 10/25.
 
 ## Where we left off (2026-10-17, later — jld-tlc spike run; ADR-0010 proposed then, see above)
