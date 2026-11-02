@@ -9,7 +9,7 @@
 - So it is now 3 of the 4 track-checked lessons where a partial inversion cost moments (10/14 −10, 10/26 −4) **or** where the check misjudged in the other direction (10/25 said unreliable at 83%). The check pools cues across windows; window 3 here had 1 cue.
 - **`jld-hc9.3.3` data, corrected:** the note first recorded Pass A first bytes as 484 s and 542 s, past the 300 s timeout, and asked whether the timer is armed before the first byte. That is the same 10× log misreading as 2026-09-25. File times show window 1's transcript landed 71 s after the audio and window 2's 84 s after window 1, so the first bytes were **48.4 s and 54.2 s**, then 26.9 s, 3.8 s (the window 3 retry) and 7.5 s; detect about 39 s. Nothing waited past 300 s, so there is no timer question here.
 
-## Where we left off (2026-10-30 — per-track Pass A is LIVE on main; ADR-0010 accepted; epic jld-8nv in progress)
+## Where we left off (2026-10-30 — per-track Pass A is LIVE; gates built in jld-8nv.3; epic jld-8nv in progress)
 - ⭐ **Decided (Steven's ears, two blind kits, 105 clips):**
   - Pass A goes **per track** when Zoom's tracks are present: per-track beats the mixed recording on his own words, 30–7 and 34–4.
   - **Steven's track gets no teacher context**: 24–17, and every case of the model "fixing" his words came from the context arm.
@@ -27,7 +27,9 @@
   - The ghost check must use the model's ORIGINAL starts; snapping moves a ghost onto nearby sound. Most 「うん」 on the teacher track are real backchannels.
   - A call on 10/26's 2-minute tail window spent 62,914 thinking tokens. It finished; the per-window fallback would catch a failure. Noted on `.3`.
 - **Spike lesson on recall:** 10/26's card-free comparison found about 7 possible new moments. Steven confirmed 18:07, 46:01 and 53:31 by ear. A second detect pass on the same transcript also finds real moments (`jld-dik`), and treating a model's hearing as a quote is a mistake: check by ear.
-- ⭐ **NEXT:** `jld-8nv.3` (ghost filter, per-track gates), `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). Separately `jld-dik` (detect twice, union).
+- ✅ **`jld-8nv.3` done (2026-10-30):** per-track windows are gated on chars per second of speech, speech behind one start and lines on silence; re-rolled, then the window falls back to the mix. On all 38 windows on disk the gate passes 37 and rejects the one defective window (10/26 w3 with context, 19 lines timed on silence); it catches 25/25 of each simulated damage. A full 10/26 run through Pass B works: 391 segments, 13 candidates, 12 moments, no fallbacks, 2 lines dropped.
+- ⚠️ **Found in that run:** a long turn can hide its own error from Pass B. `jld-zxe` (P1): one 182-character segment put the error 45 s past the clip.
+- ⭐ **NEXT:** `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). Separately `jld-dik` (detect twice, union).
 - `jld-ec6`, `jld-beb` and `jld-lg6` are re-scoped to the fallback path. `jld-dik` (run detect twice and take the union) is the recall lever: moment counts tied on 10/25.
 
 ## Where we left off (2026-10-17, later — jld-tlc spike run; ADR-0010 proposed then, see above)

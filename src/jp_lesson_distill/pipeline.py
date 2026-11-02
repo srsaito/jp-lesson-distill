@@ -39,9 +39,17 @@ from .models import (
     fmt_ts,
     parse_ts,
 )
-from .quality import WindowReport, evaluate, marker_by_window, marker_verdict
+from .quality import (
+    TrackReport,
+    WindowReport,
+    evaluate,
+    evaluate_track,
+    is_ghost,
+    marker_by_window,
+    marker_verdict,
+)
 from .tracks import identify as identify_tracks
-from .tracks import load_energy, relabel, snap_start
+from .tracks import FRAME_S, SOUND_DB, load_energy, relabel, snap_start
 from .tracks import tracks_dir as tracks_dir_of
 from .tracks import select as select_tracks
 
@@ -368,6 +376,7 @@ def _record_pass_a_path(work: Path, path: str, fallback_windows: list[int] | Non
 
 
 TRACK_PROMPTS = {"teacher": prompts.TRACK_TEACHER, "student": prompts.TRACK_STUDENT}
+TRACK_SILENT_S = 1.0  # under this much sound in a window, the track is not worth a call
 
 
 def _pass_a_tracks(cfg: Config, work: Path, audio: Path, total: float, get_client) -> Transcript:
@@ -420,7 +429,7 @@ def _pass_a_tracks(cfg: Config, work: Path, audio: Path, total: float, get_clien
         else:
             try:
                 segments = _transcribe_tracks_window(cfg, get_client, role_windows, i, tag, span,
-                                                     tracks_dir)
+                                                     tracks_dir, energy, offset, window_s)
                 _save(wpath, Transcript(segments=segments))
             except Exception as exc:  # noqa: BLE001 — any failure here has a fallback
                 print(f"[pass_a] {tag}: per-track transcription FAILED ({type(exc).__name__}: "
@@ -455,22 +464,65 @@ def _pass_a_tracks(cfg: Config, work: Path, audio: Path, total: float, get_clien
     return transcript
 
 
+class TrackWindowDegraded(RuntimeError):
+    """Every attempt at one track's window failed or was rejected: the window takes the mix."""
+
+
+def _track_starts(tt: TrackTranscript) -> list[float]:
+    return [t for t in (_start_or_inf(s.start) for s in tt.segments) if t != float("inf")]
+
+
 def _transcribe_tracks_window(cfg: Config, get_client, role_windows: dict, i: int, tag: str,
-                              span: str, tracks_dir: Path) -> list[Segment]:
-    """Both mic tracks of one window, in parallel, as speaker-labelled segments (window-relative)."""
+                              span: str, tracks_dir: Path, energy, offset: float,
+                              window_s: float) -> list[Segment]:
+    """Both mic tracks of one window, in parallel, as speaker-labelled segments (window-relative).
+
+    Each track is judged against how much that person actually spoke (quality.evaluate_track) and
+    re-rolled warmer while it fails. A track that never passes raises TrackWindowDegraded, and the
+    caller transcribes the window from the mix. Accepted transcripts are cached per track, so a
+    retry only redoes the track that failed. Lines with no sound near the model's own start are
+    dropped here, before snapping could move them onto nearby sound.
+    """
     client = get_client()
+
+    def judge(role: str, tt: TrackTranscript) -> TrackReport:
+        return evaluate_track(_track_starts(tt), [x.text for x in tt.segments], energy[role],
+                              FRAME_S, SOUND_DB, offset, window_s)
 
     def one(role: str) -> TrackTranscript:
         cache = tracks_dir / f"{role}_w{i:02d}.json"
         if cache.exists():
             return _load(cache, TrackTranscript)
+        lo, hi = int(offset / FRAME_S), int((offset + window_s) / FRAME_S)
+        if float((energy[role][lo:hi] > SOUND_DB).sum()) * FRAME_S < TRACK_SILENT_S:
+            # Nobody spoke on this track here, and a model asked to transcribe silence invents.
+            print(f"[pass_a] {tag} {role}: no speech on this track, nothing to transcribe", flush=True)
+            result = TrackTranscript(segments=[])
+            _save(cache, result)
+            return result
         path, _ = role_windows[role][i - 1]
-        result: TrackTranscript = generate(
-            client, cfg.model, [upload_audio(client, path), TRACK_PROMPTS[role]], TrackTranscript,
-            thinking_level=cfg.pass_a_thinking,
-            debug_dump=tracks_dir / f"pass_a_partial_{role}_w{i:02d}.json")
-        _save(cache, result)
-        return result
+        problems: list[str] = []
+        tries = max(1, cfg.window_attempts)
+        for n in range(1, tries + 1):
+            try:
+                result = generate(
+                    client, cfg.model, [upload_audio(client, path), TRACK_PROMPTS[role]],
+                    TrackTranscript, temperature=0.2 + 0.2 * (n - 1),
+                    thinking_level=cfg.pass_a_thinking,
+                    debug_dump=tracks_dir / f"pass_a_partial_{role}_w{i:02d}.attempt{n}.json")
+            except Exception as exc:  # noqa: BLE001 — a loop, a spent budget or a dead call: all re-roll
+                problems.append(f"{type(exc).__name__}: {exc}")
+                print(f"[pass_a] {tag} {role}: attempt {n} failed ({problems[-1]})", flush=True)
+                continue
+            report = judge(role, result)
+            print(f"[pass_a] {tag} {role}: {report.summary()}", flush=True)
+            if report.ok:
+                _save(cache, result)
+                return result
+            _save(tracks_dir / f"{role}_w{i:02d}.attempt{n}.json", result)
+            problems.append("; ".join(c.detail for c in report.failures))
+            print(f"[pass_a] {tag} {role}: attempt {n} REJECTED: {problems[-1]}", flush=True)
+        raise TrackWindowDegraded(f"{role} track, {tries} attempt(s): {problems[-1]}")
 
     print(f"[pass_a] {tag} {span}: transcribing the teacher and student tracks with {cfg.model}",
           flush=True)
@@ -478,15 +530,22 @@ def _transcribe_tracks_window(cfg: Config, get_client, role_windows: dict, i: in
         futures = {role: pool.submit(one, role) for role in TRACK_PROMPTS}
         results = {role: f.result() for role, f in futures.items()}
     segments = []
+    dropped = 0
     for role, tt in results.items():
-        for s in tt.segments:
+        for x in tt.segments:
+            t = _start_or_inf(x.start)
+            if t != float("inf") and is_ghost(energy[role], FRAME_S, SOUND_DB, offset + t):
+                dropped += 1
+                continue
             # Played audio on a mic (he played it out of his speakers) is not his speech; until
             # the transcript has a speaker value for it (ADR-0011, jld-8nv.4) it is marked in text.
-            text = f"（再生音声）{s.text}" if s.played else s.text
-            segments.append(Segment(start=s.start, speaker=role, text=text, uncertain=s.uncertain))
-    segments.sort(key=lambda s: _start_or_inf(s.start))
-    print(f"[pass_a] {tag}: {sum(s.speaker == 'teacher' for s in segments)} teacher + "
-          f"{sum(s.speaker == 'student' for s in segments)} student segments", flush=True)
+            text = f"（再生音声）{x.text}" if x.played else x.text
+            segments.append(Segment(start=x.start, speaker=role, text=text, uncertain=x.uncertain))
+    segments.sort(key=lambda x: _start_or_inf(x.start))
+    print(f"[pass_a] {tag}: {sum(x.speaker == 'teacher' for x in segments)} teacher + "
+          f"{sum(x.speaker == 'student' for x in segments)} student segments"
+          + (f"; dropped {dropped} line(s) with no sound on their own track" if dropped else ""),
+          flush=True)
     return segments
 
 

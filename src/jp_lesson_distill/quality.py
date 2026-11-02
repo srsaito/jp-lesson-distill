@@ -278,6 +278,93 @@ def marker_by_window(segments: list[Segment], bounds: list[tuple[float, float]])
     return line
 
 
+# --- per-track windows (ADR-0010, jld-8nv.3) ---
+#
+# evaluate() cannot judge a single speaker's track: it is silent much of the time by design, so
+# coverage and dead time mean nothing, and segment counts vary run to run with nothing wrong
+# (teacher 10/26 w3: 81 and 192 segments, same text). The track itself says how much speech there
+# was, so the transcript is judged against that. Calibrated on all 38 per-track windows on disk
+# (10/12, 10/14, 10/25, 10/26; counts in tests/fixtures/track_gates_calibration.json):
+#   chars per second of speech  3.66-5.83, whichever lesson or speaker
+#   speech behind one start     at most 76 s (long segments are fine, holes are not)
+#   lines on silence            at most 6.6%, except the one defective window, at 22.6%
+TRACK_MIN_SPEECH_S = 30.0    # below this a rate says nothing (a short tail, a quiet window)
+TRACK_RATE_FLOOR = 2.5       # a silent compression returns about a third: ~1.4 chars/s
+TRACK_RATE_CEILING = 9.0     # text well beyond what was said is invented or repeated
+TRACK_MAX_SPEECH_GAP_S = 150.0
+TRACK_GHOST_FRAC = 0.15
+TRACK_GHOST_MIN_N = 5        # one stray うん in a four-line window is not a timing failure
+GHOST_BEFORE_S, GHOST_AFTER_S = 2.0, 3.0  # how far from a start its voice may be
+
+
+def is_ghost(db, frame_s: float, sound_db: float, t: float) -> bool:
+    """No sound on the line's own track near the model's ORIGINAL start.
+
+    Use it before snapping: snapping moves an invented line onto whatever sound is nearby.
+    """
+    near = db[max(0, int((t - GHOST_BEFORE_S) / frame_s)): int((t + GHOST_AFTER_S) / frame_s)]
+    return len(near) > 0 and bool(near.max() < sound_db)
+
+
+@dataclass
+class TrackReport:
+    speech_s: float
+    segments: int
+    chars: int
+    max_speech_gap: float
+    ghosts: int
+    checks: list[Check] = field(default_factory=list)
+
+    @property
+    def rate(self) -> float:
+        return self.chars / self.speech_s if self.speech_s else 0.0
+
+    @property
+    def failures(self) -> list[Check]:
+        return [c for c in self.checks if c.failed]
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+    def summary(self) -> str:
+        return (f"{self.segments} segments, {self.speech_s:.0f}s of speech, {self.rate:.1f} chars/s, "
+                f"up to {self.max_speech_gap:.0f}s of speech behind one start, "
+                f"{self.ghosts} on silence")
+
+
+def evaluate_track(starts: list[float], texts: list[str], db, frame_s: float, sound_db: float,
+                   offset: float, duration: float) -> TrackReport:
+    """Judge one speaker's window against how much that speaker actually spoke.
+
+    `starts` are window-relative and as the model gave them; `db` is the whole track's energy.
+    """
+    lo, hi = int(offset / frame_s), min(len(db), int((offset + duration) / frame_s))
+    active = db[lo:hi] > sound_db
+    speech = float(active.sum()) * frame_s
+    chars = sum(len(t) for t in texts)
+    cuts = sorted({min(len(active), max(0, int(t / frame_s))) for t in starts})
+    edges = [0, *cuts, len(active)]
+    gap = max((float(active[a:b].sum()) * frame_s for a, b in zip(edges, edges[1:])), default=0.0)
+    ghosts = sum(is_ghost(db, frame_s, sound_db, offset + t) for t in starts)
+    report = TrackReport(speech, len(texts), chars, gap, ghosts)
+    enough = speech >= TRACK_MIN_SPEECH_S
+    report.checks = [
+        Check("text-missing", not enough or report.rate >= TRACK_RATE_FLOOR,
+              f"{report.rate:.1f} chars per second of speech, under {TRACK_RATE_FLOOR:g}: "
+              "text is missing"),
+        Check("text-invented", not enough or report.rate <= TRACK_RATE_CEILING,
+              f"{report.rate:.1f} chars per second of speech, over {TRACK_RATE_CEILING:g}: "
+              "more text than was said"),
+        Check("dropout", gap <= TRACK_MAX_SPEECH_GAP_S,
+              f"{gap:.0f}s of speech behind one start, over {TRACK_MAX_SPEECH_GAP_S:g}s"),
+        Check("timing", len(starts) < TRACK_GHOST_MIN_N or ghosts / len(starts) <= TRACK_GHOST_FRAC,
+              f"{ghosts} of {len(starts)} lines start where this track is silent: "
+              "the timestamps have drifted or the lines are invented"),
+    ]
+    return report
+
+
 def _first_drop(starts: list[float]) -> float:
     for a, b in zip(starts, starts[1:]):
         if b < a:
