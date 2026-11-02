@@ -31,6 +31,10 @@ def main() -> None:
     p.add_argument("--work-dir", type=Path, default=Path("work"))
     p.add_argument("--skip-pass-b", action="store_true", help="stop after moment detection (cheap dry run)")
     p.add_argument("--max-moments", type=int, default=40)
+    p.add_argument("--detect-runs", type=int, default=2,
+                   help="how many times to run moment detection over the transcript and merge the "
+                        "results; detect misses moments at random, so more runs find more, and Pass "
+                        "B does not filter them out (default: 2; 1 = the old behaviour)")
     p.add_argument("--window-minutes", type=float, default=20.0,
                    help="length of each Pass A transcription window (0 = one call for the whole "
                         "recording; only safe under ~20 min)")
@@ -161,7 +165,7 @@ def main() -> None:
         run(Config(
             recording=args.recording, date=args.date, model=args.model,
             work_dir=args.work_dir, out_dir=args.out_dir,
-            skip_pass_b=args.skip_pass_b, max_moments=args.max_moments,
+            skip_pass_b=args.skip_pass_b, max_moments=args.max_moments, detect_runs=args.detect_runs,
             window_minutes=args.window_minutes, overlap_seconds=args.overlap_seconds,
             window_attempts=args.window_attempts, stream_timeout=args.stream_timeout,
             pass_a_thinking=(None if args.pass_a_thinking == "model-default"
