@@ -54,6 +54,10 @@ from .tracks import tracks_dir as tracks_dir_of
 from .tracks import select as select_tracks
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
+# How far a clip may grow to take in the student's whole last turn (jld-zxe). Three chars per second
+# errs long: healthy speech is 3.7-5.8 (tests/fixtures/track_gates_calibration.json).
+TURN_CHARS_PER_S = 3.0
+CLIP_MAX_S = 120.0
 BOARD_BEFORE, BOARD_AFTER = 30.0, 90.0  # seconds: typing trails the speech it answers (ADR-0009)
 # Seconds of silence before a re-listen call is abandoned and re-rolled. Measured 2026-10-08
 # on 10/5's clips: 15 healthy calls took 7–26 s end to end, and a stalled one sends nothing at
@@ -230,7 +234,7 @@ def _run(cfg: Config) -> Path | None:
             t0, t1 = parse_ts(cand.t_start), parse_ts(cand.t_end)
             clip = clips_dir / f"m{i:02d}.m4a"
             if not clip.exists():
-                clip_audio(audio, clip, t0 - CLIP_PAD, min(total, t1 + CLIP_PAD))
+                clip_audio(audio, clip, t0 - CLIP_PAD, clip_end(transcript.segments, t0, t1, total))
             saved = relisten_dir / f"m{i:02d}.json"
             if saved.exists():
                 print(f"[pass_b] {i}/{len(ordered)} cached: {saved.name}")
@@ -306,6 +310,30 @@ def _run(cfg: Config) -> Path | None:
         print(f"[emit] {dest} — {sum(bool(m.board) for m in out.moments)} of {len(out.moments)} "
               "moments now carry board lines")
     return dest
+
+
+def clip_end(segments: list[Segment], t0: float, t1: float, total: float) -> float:
+    """Where a candidate's Pass B clip stops: past the end of the student's last turn in it.
+
+    Detect only sees when a segment starts, so its t_end says little about a long turn. On 10/26 a
+    182-character turn began at 09:31 with the error about 45 s in; detect said 09:31-09:43, the
+    clip stopped at 09:58, and Pass B rightly rejected it as cut off. A real moment was lost. So the
+    clip reaches the turn's estimated end, or the student's next segment if that is sooner: only
+    his own, because on the per-track path the teacher's うん can start in the middle of his turn.
+    It never ends before detect's own t_end + CLIP_PAD; the growth alone is capped at CLIP_MAX_S.
+    """
+    end = t1
+    student = [(parse_ts(s.start), s) for s in segments if s.speaker == "student"]
+    for i, (start, seg) in enumerate(student):
+        if start > t1:
+            break
+        if i + 1 == len(student) or student[i + 1][0] > t1:
+            turn_end = start + len(seg.text) / TURN_CHARS_PER_S
+            if i + 1 < len(student):
+                turn_end = min(turn_end, student[i + 1][0])
+            end = max(t1, turn_end)
+    grown = min(end + CLIP_PAD, t0 - CLIP_PAD + CLIP_MAX_S)
+    return min(total, max(t1 + CLIP_PAD, grown))
 
 
 def window_bounds(total: float, win_s: float, overlap_s: float) -> list[tuple[float, float]]:

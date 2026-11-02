@@ -28,7 +28,7 @@
   - A call on 10/26's 2-minute tail window spent 62,914 thinking tokens. It finished; the per-window fallback would catch a failure. Noted on `.3`.
 - **Spike lesson on recall:** 10/26's card-free comparison found about 7 possible new moments. Steven confirmed 18:07, 46:01 and 53:31 by ear. A second detect pass on the same transcript also finds real moments (`jld-dik`), and treating a model's hearing as a quote is a mistake: check by ear.
 - ✅ **`jld-8nv.3` done (2026-10-30):** per-track windows are gated on chars per second of speech, speech behind one start and lines on silence; re-rolled, then the window falls back to the mix. On all 38 windows on disk the gate passes 37 and rejects the one defective window (10/26 w3 with context, 19 lines timed on silence); it catches 25/25 of each simulated damage. A full 10/26 run through Pass B works: 391 segments, 13 candidates, 12 moments, no fallbacks, 2 lines dropped.
-- ⚠️ **Found in that run:** a long turn can hide its own error from Pass B. `jld-zxe` (P1): one 182-character segment put the error 45 s past the clip.
+- ✅ **`jld-zxe` done (2026-11-02):** Pass B clips now reach the end of the student's last turn (`pipeline.clip_end`). The rejected 10/26 09:31 clip is now confirmed. 372 of 566 past clips would grow, median 5 s, max 62 s; the effect on a whole lesson is not measured yet.
 - ⭐ **NEXT:** `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks). Separately `jld-dik` (detect twice, union).
 - `jld-ec6`, `jld-beb` and `jld-lg6` are re-scoped to the fallback path. `jld-dik` (run detect twice and take the union) is the recall lever: moment counts tied on 10/25.
 
