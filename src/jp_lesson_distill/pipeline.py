@@ -26,6 +26,7 @@ from .gemini import (
     make_client,
     upload_audio,
 )
+from .labeling import similarity
 from .models import (
     BoardNote,
     Candidate,
@@ -58,6 +59,8 @@ CLIP_PAD = 15.0  # seconds of context on each side of a candidate
 # errs long: healthy speech is 3.7-5.8 (tests/fixtures/track_gates_calibration.json).
 TURN_CHARS_PER_S = 3.0
 CLIP_MAX_S = 120.0
+SAME_CANDIDATE_GAP_S = 10.0  # two candidates this close in time may be one exchange...
+SAME_CANDIDATE_SIMILARITY = 0.5  # ...if their excerpts also share this share of bigrams
 BOARD_BEFORE, BOARD_AFTER = 30.0, 90.0  # seconds: typing trails the speech it answers (ADR-0009)
 # Seconds of silence before a re-listen call is abandoned and re-rolled. Measured 2026-10-08
 # on 10/5's clips: 15 healthy calls took 7–26 s end to end, and a stalled one sends nothing at
@@ -75,6 +78,7 @@ class Config:
     out_dir: Path = Path("/Users/stevensaito/Docs/Vault-GeneralNotes/_raw")
     skip_pass_b: bool = False
     max_moments: int = 40
+    detect_runs: int = 2  # detect misses moments at random; the union of runs finds more (jld-dik)
     window_minutes: float = 20.0  # 0 = transcribe the whole recording in one call
     overlap_seconds: float = 30.0
     window_attempts: int = 2  # re-rolls of a window the sanity gates reject
@@ -195,10 +199,7 @@ def _run(cfg: Config) -> Path | None:
         # Clips and re-listens are filed by candidate number; a new detect renumbers them.
         for stale in ("clips", "relisten"):
             shutil.rmtree(work / stale, ignore_errors=True)
-        print("[detect] flagging candidate learning moments")
-        prompt = prompts.DETECT.format(transcript=transcript.model_dump_json())
-        cands: CandidateList = generate(client, cfg.model, [prompt], CandidateList, progress=True)
-        _save(candidates_path, cands)
+        _save(candidates_path, _detect_runs(cfg, work, transcript, client))
     cands = _load(candidates_path, CandidateList)
     ordered = sorted(cands.candidates, key=lambda c: c.priority, reverse=True)
     if len(ordered) > cfg.max_moments:
@@ -310,6 +311,65 @@ def _run(cfg: Config) -> Path | None:
         print(f"[emit] {dest} — {sum(bool(m.board) for m in out.moments)} of {len(out.moments)} "
               "moments now carry board lines")
     return dest
+
+
+def same_candidate(a: Candidate, b: Candidate) -> bool:
+    """The same exchange found twice: close in time AND about the same words.
+
+    Time alone would merge two different errors in a dense stretch and lose one. Measured on five
+    transcripts, the result hardly moves with the time gap (0-25 s): the excerpt decides it.
+    """
+    a0, a1, b0, b1 = map(parse_ts, (a.t_start, a.t_end, b.t_start, b.t_end))
+    return (a0 - SAME_CANDIDATE_GAP_S <= b1 and b0 - SAME_CANDIDATE_GAP_S <= a1
+            and similarity(a.excerpt, b.excerpt) >= SAME_CANDIDATE_SIMILARITY)
+
+
+def merge_candidates(runs: list[list[Candidate]]) -> list[Candidate]:
+    """The union of several detect runs. A repeat widens the moment it matches and lifts its priority."""
+    merged: list[Candidate] = []
+    for run in runs:
+        known = len(merged)  # a run's own candidates are never merged with each other
+        for c in run:
+            hit = next((i for i in range(known) if same_candidate(c, merged[i])), None)
+            if hit is None:
+                merged.append(c)
+                continue
+            m = merged[hit]
+            merged[hit] = m.model_copy(update={
+                "t_start": min(m.t_start, c.t_start, key=parse_ts),
+                "t_end": max(m.t_end, c.t_end, key=parse_ts),
+                "priority": max(m.priority, c.priority),
+            })
+    return merged
+
+
+def _detect_runs(cfg: Config, work: Path, transcript: Transcript, client) -> CandidateList:
+    """Detect several times over the same transcript and keep the union (jld-dik).
+
+    Detect misses real moments at random: each extra run found about 18 that Pass B confirmed, on
+    top of the first runs' 81, over five transcripts. Each run is cached as candidates_runN.json.
+    A later run that fails only costs its extra moments; the first must succeed.
+    """
+    prompt = prompts.DETECT.format(transcript=transcript.model_dump_json())
+    runs: list[list[Candidate]] = []
+    for n in range(1, max(1, cfg.detect_runs) + 1):
+        path = work / f"candidates_run{n}.json"
+        if path.exists():
+            runs.append(_load(path, CandidateList).candidates)
+            continue
+        print(f"[detect] flagging candidate learning moments (run {n} of {cfg.detect_runs})")
+        try:
+            found: CandidateList = generate(client, cfg.model, [prompt], CandidateList, progress=True)
+        except Exception as exc:  # noqa: BLE001 — extra runs are optional, whatever went wrong
+            if n == 1:
+                raise
+            print(f"[detect] run {n} FAILED ({type(exc).__name__}); carrying on with {n - 1} run(s)")
+            break
+        _save(path, found)
+        runs.append(found.candidates)
+    merged = merge_candidates(runs)
+    print(f"[detect] runs found {' + '.join(str(len(r)) for r in runs)} -> {len(merged)} distinct candidates")
+    return CandidateList(candidates=merged)
 
 
 def clip_end(segments: list[Segment], t0: float, t1: float, total: float) -> float:
