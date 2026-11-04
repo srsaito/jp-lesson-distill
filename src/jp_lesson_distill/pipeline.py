@@ -77,7 +77,7 @@ class Config:
     out_dir: Path = Path("/Users/stevensaito/Docs/Vault-GeneralNotes/_raw")
     skip_pass_b: bool = False
     max_moments: int = 40
-    detect_runs: int = 2  # detect misses moments at random; the union of runs finds more (jld-dik)
+    detect_runs: int = 3  # detect misses moments at random; the union of runs finds more (jld-dik)
     window_minutes: float = 20.0  # 0 = transcribe the whole recording in one call
     overlap_seconds: float = 30.0
     window_attempts: int = 2  # re-rolls of a window the sanity gates reject

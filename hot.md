@@ -16,7 +16,7 @@
 - So it is now 3 of the 4 track-checked lessons where a partial inversion cost moments (10/14 −10, 10/26 −4) **or** where the check misjudged in the other direction (10/25 said unreliable at 83%). The check pools cues across windows; window 3 here had 1 cue.
 - **`jld-hc9.3.3` data, corrected:** the note first recorded Pass A first bytes as 484 s and 542 s, past the 300 s timeout, and asked whether the timer is armed before the first byte. That is the same 10× log misreading as 2026-09-25. File times show window 1's transcript landed 71 s after the audio and window 2's 84 s after window 1, so the first bytes were **48.4 s and 54.2 s**, then 26.9 s, 3.8 s (the window 3 retry) and 7.5 s; detect about 39 s. Nothing waited past 300 s, so there is no timer question here.
 
-## Where we left off (2026-10-30 — per-track Pass A is LIVE; gates built in jld-8nv.3; epic jld-8nv in progress)
+## Where we left off (2026-11-03 — everything merged and verified end to end on 10/26; TO DO below)
 - ⭐ **Decided (Steven's ears, two blind kits, 105 clips):**
   - Pass A goes **per track** when Zoom's tracks are present: per-track beats the mixed recording on his own words, 30–7 and 34–4.
   - **Steven's track gets no teacher context**: 24–17, and every case of the model "fixing" his words came from the context arm.
@@ -37,7 +37,16 @@
 - ✅ **`jld-8nv.3` done (2026-10-30):** per-track windows are gated on chars per second of speech, speech behind one start and lines on silence; re-rolled, then the window falls back to the mix. On all 38 windows on disk the gate passes 37 and rejects the one defective window (10/26 w3 with context, 19 lines timed on silence); it catches 25/25 of each simulated damage. A full 10/26 run through Pass B works: 391 segments, 13 candidates, 12 moments, no fallbacks, 2 lines dropped.
 - ✅ **`jld-zxe` done (2026-11-02):** Pass B clips now reach the end of the student's last turn (`pipeline.clip_end`). The rejected 10/26 09:31 clip is now confirmed. 372 of 566 past clips would grow, median 5 s, max 62 s; the effect on a whole lesson is not measured yet.
 - ✅ **`jld-dik` done (2026-11-02):** detect runs twice and keeps the union (`--detect-runs`). Each extra run adds about 18 moments on 81 over five transcripts; warmer does not help. ⚠️ Pass B confirmed all 40 added candidates, so it is not a filter (`jld-b18`).
-- ⭐ **NEXT:** read the next real lesson's log: it is the first full run with per-track, gates, longer clips and two detect runs. Then `jld-b18` (measure false moments by ear), `.4` (ADR-0011: a `played` speaker value), `.5` (share track as played audio), `.6` (smoke test with synthetic tracks).
+- ✅ **Full 10/26 run on main (2026-11-03, scratch `work/e2e-1026/`):** per-track, no fallbacks, 392 lines, 5 invented lines dropped, 2 detect runs 16 + 16 -> 20, Pass B kept all 20. The 09:31 moment (jld-zxe) now comes through.
+  - Recall is the limit: only 8 of the 16 moments carded for 10/26 were found again. All 10/26 runs together give about 31 distinct moments. ⇒ the detect default is now **3 runs**.
+  - One duplicate survived (50:43, the passport and wallet lines), one dubious new-item (37:45 「ハラス」), and **53:20 lost an error Steven confirmed by ear** (he said 「旅行とき」; the moment reads 「旅行の時」).
+  - Seven new 10/26 moments handed to Steven for cards: 18:07 and 46:01 (confirmed by ear), plus 00:53, 10:53, 11:30, 29:47, 38:58.
+- ⭐ **TO DO, in order (written 2026-11-03 before a break):**
+  1. **Merge the 3-run default PR** (branch `detect-runs-3`), then `git pull` in the main checkout.
+  2. **`jld-b18`: measure false moments by ear, then filter.** Cut a blind kit over 10/26's 20 moments (`work/e2e-1026/20261026/`) and score real/false per moment. Then choose from that: a post-Pass-B duplicate check on `student_verbatim` (the 50:43 pair), a stricter `keep=false` in the Pass B prompt, or leaving precision to the card session.
+  3. **The 53:20 normalisation (`jld-5vz`):** find where 「旅行とき」 became 「旅行の時」. Was it the student track's transcript or Pass B? Compare `work/e2e-1026/20261026/tracks/student_w03.json` with `relisten/`. That is the verbatim risk the per-track work was meant to remove.
+  4. **The next real lesson:** run it normally and read the log (first production run with everything in). Check the path line, no fallbacks, moment count (expect more with 3 runs) and duplicates.
+  5. Later: `jld-8nv.4` (ADR-0011: a `played` speaker value) → `.5` (share track as played audio), `.6` (smoke test with synthetic tracks).
 - `jld-ec6`, `jld-beb` and `jld-lg6` are re-scoped to the fallback path.
 
 ## Where we left off (2026-10-17, later — jld-tlc spike run; ADR-0010 proposed then, see above)

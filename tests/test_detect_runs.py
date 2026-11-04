@@ -63,9 +63,9 @@ def setup(tmp_path, monkeypatch, answers):
     return Config(recording=tmp_path / "r.m4a", date="20990101")
 
 
-def test_two_runs_by_default_each_cached(tmp_path, monkeypatch):
+def test_runs_are_each_cached(tmp_path, monkeypatch):
     cfg = setup(tmp_path, monkeypatch, [[cand("01:00", "01:10", A)], [cand("30:00", "30:10", B)]])
-    assert cfg.detect_runs == 2
+    cfg.detect_runs = 2
     assert len(_detect_runs(cfg, tmp_path, TRANSCRIPT, None).candidates) == 2
     assert (tmp_path / "candidates_run1.json").exists() and (tmp_path / "candidates_run2.json").exists()
 
