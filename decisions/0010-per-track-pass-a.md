@@ -88,3 +88,16 @@ With it:
 - **Moment counts do not rise on a good day** (10/25 tied). The gain is attribution, turn boundaries, start times and verbatim, which shows on the bad days (10/12, 10/14) and in Steven's ears. Recall is limited by detect's own variance: see `jld-dik`.
 - **A per-track call can misbehave without failing.** One no-context call on 10/14 reported no thinking, answered in 4 s and lumped Steven's lines into long segments. The build needs sanity gates on per-track windows, like the ones `quality.py` applies to the mix.
 - Lessons before 2026-10-08 never get this; their quality stays where A1 puts it.
+
+## Amendment 2026-11-04 — roles are worked out, not looked up (jld-8nv.7)
+
+The 2026-11-03 lesson's files were `audioSteveSaito2…`, `audio末武創一1…` (mic) and `audio末武創一3…` (share): Zoom's per-person digit is join order, not a role. The hardcoded prefixes (`SteveSaito1` / `末武創一2`) therefore missed both mics, and the run took the mixed path without anyone asking for it. `tracks.identify` now:
+
+1. groups the files by display name, with the trailing digits (index plus meeting id) removed;
+2. splits a person's two files into share (the quieter: 1.5–5% sound in real lessons) and mic (25–35%), requiring the mic to sound like one;
+3. assigns student and teacher by display-name fragments, then by "the sharer is the teacher";
+4. hands anything still ambiguous (new names, a guest, an odd count) to a classifier. In production this is one Gemini call that hears a 40 s sample of each track (`classify_with_gemini`). Its answer is cached in `tracks/roles_classifier.json`, and it must be confident (≥ 0.8) and consistent, or the lesson takes the mixed path.
+
+A gap in Zoom's 1..N numbering means a file is missing, and the lesson takes the mixed path (a lone share track must never pass as a mic). A missing mic never goes to the classifier. The decision, including `assigned_by` (`names` / `energy` / `classifier`), is saved in `tracks/selection.json`, and later stages read the files from there rather than identifying them again.
+
+Checked against every lesson with tracks (10/8, 10/12, 10/14, 10/25, 10/26 by names; 11/3 by names despite the renumbering). The classifier, forced on 11/3, assigned all three roles correctly (confidence 1.00).

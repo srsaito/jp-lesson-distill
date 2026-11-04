@@ -86,7 +86,7 @@ def test_a_missing_mic_takes_the_mixed_path_for_the_whole_lesson(tmp_path, clips
     files = {k: v for k, v in FULL.items() if k != drop}
     sel = select(lesson(tmp_path, clips, **files), LEN)
     assert sel.path == "mixed"
-    assert f"{who} mic track is missing" in sel.reason
+    assert "mic track is missing" in sel.reason
 
 
 def test_a_track_of_the_wrong_length_is_not_from_this_recording(tmp_path, clips):
@@ -108,7 +108,14 @@ def test_a_corrupt_track_falls_back(tmp_path, clips):
 
 
 def test_a_mic_that_recorded_nobody_falls_back(tmp_path, clips):
+    # Beside his share track, a silent teacher mic must not let the share track pass as the mic.
     sel = select(lesson(tmp_path, clips, **{**FULL, TEACHER: "silent"}), LEN)
+    assert sel.path == "mixed"
+    assert "neither sounds like a mic" in sel.reason
+
+    other = tmp_path / "b"
+    other.mkdir()
+    sel = select(lesson(other, clips, **{STEVEN: "steven", TEACHER: "silent"}), LEN)
     assert sel.path == "mixed"
     assert "teacher mic track has sound in only" in sel.reason
 
@@ -116,7 +123,7 @@ def test_a_mic_that_recorded_nobody_falls_back(tmp_path, clips):
 def test_two_files_for_one_role_is_ambiguous_and_falls_back(tmp_path, clips):
     sel = select(lesson(tmp_path, clips, **FULL, **{"audioSteveSaito19999999999.m4a": "steven"}), LEN)
     assert sel.path == "mixed"
-    assert "match the student prefix" in sel.reason
+    assert "two files that both sound like a mic" in sel.reason
 
 
 def test_a_missing_or_silent_share_track_only_warns(tmp_path, clips):
@@ -137,16 +144,133 @@ def test_silence_that_is_not_digital_zero_warns(tmp_path, clips):
     assert any("not digital zero" in w for w in sel.warnings)
 
 
-def test_roles_are_matched_by_exact_prefix_not_by_digits_in_the_meeting_id(tmp_path):
+def test_digits_in_the_meeting_id_never_decide_a_role(tmp_path):
     # A loose glob for the share track (audio*3*) once matched the teacher's file, whose
-    # meeting id is full of 3s. The index digit is part of the prefix.
+    # meeting id is full of 3s. Roles now come from the display name, never the digits.
     folder = tmp_path / "x"
     folder.mkdir()
     for name in ("audio末武創一23333333333.m4a", "audioSteveSaito13333333333.m4a"):
         (folder / name).write_bytes(b"")
-    found = identify(folder)
+    found, how = identify(folder)
     assert found["teacher"].name.startswith("audio末武創一2")
-    assert "share" not in found
+    assert "share" not in found and how == "names"
+
+
+# --- jld-8nv.7: Zoom renumbers the files; roles are worked out, not looked up ---
+
+RENUMBERED = {  # 2026-11-03: Steven joined second, so every index moved
+    "audioSteveSaito21936486817.m4a": "steven",
+    "audio末武創一11936486817.m4a": "teacher",
+    "audio末武創一31936486817.m4a": "share",
+}
+
+
+def test_the_11_3_renumbering_still_selects_per_track(tmp_path, clips):
+    sel = select(lesson(tmp_path, clips, **RENUMBERED), LEN)
+    assert sel.path == "per-track", sel.reason
+    assert sel.assigned_by == "names"
+    assert sel.tracks["student"].path.endswith("audioSteveSaito21936486817.m4a")
+    assert sel.tracks["teacher"].path.endswith("audio末武創一11936486817.m4a")
+    assert sel.tracks["share"].path.endswith("audio末武創一31936486817.m4a")
+
+
+def test_the_share_track_is_the_sharers_quieter_file_whatever_its_number(tmp_path, clips):
+    # Swap which of his two files carries which number: the quiet one is still the share.
+    files = {"audioSteveSaito11.m4a": "steven", "audio末武創一31.m4a": "teacher",
+             "audio末武創一21.m4a": "share"}
+    sel = select(lesson(tmp_path, clips, **files), LEN)
+    assert sel.path == "per-track", sel.reason
+    assert sel.tracks["teacher"].path.endswith("audio末武創一31.m4a")
+    assert sel.tracks["share"].path.endswith("audio末武創一21.m4a")
+
+
+def test_one_known_name_is_enough(tmp_path, clips):
+    files = {"audioSteven Saito21234567890.m4a": "steven", "audioiPad11234567890.m4a": "teacher"}
+    sel = select(lesson(tmp_path, clips, **files), LEN)
+    assert sel.path == "per-track", sel.reason
+    assert sel.tracks["teacher"].path.endswith("audioiPad11234567890.m4a")
+
+
+def test_unknown_names_fall_back_to_who_is_sharing(tmp_path, clips):
+    files = {"audioGuest11234567890.m4a": "steven", "audioZoomUser21234567890.m4a": "teacher",
+             "audioZoomUser31234567890.m4a": "share"}
+    sel = select(lesson(tmp_path, clips, **files), LEN)
+    assert sel.path == "per-track", sel.reason
+    assert sel.assigned_by == "energy"
+    assert sel.tracks["teacher"].path.endswith("audioZoomUser21234567890.m4a")
+    assert sel.tracks["student"].path.endswith("audioGuest11234567890.m4a")
+
+
+UNKNOWN = {"audioGuest11234567890.m4a": "steven", "audioiPhone21234567890.m4a": "teacher"}
+
+
+def test_unknown_names_and_no_share_without_a_classifier_fall_back(tmp_path, clips):
+    sel = select(lesson(tmp_path, clips, **UNKNOWN), LEN)
+    assert sel.path == "mixed"
+    assert "cannot tell who is who" in sel.reason
+
+
+def test_the_classifier_settles_what_the_files_cannot(tmp_path, clips):
+    asked = []
+
+    def classify(files, work):
+        asked.append(sorted(p.name for p in files))
+        return {"student": "audioGuest11234567890.m4a", "teacher": "audioiPhone21234567890.m4a",
+                "share": None, "confidence": 0.95, "reason": "learner hesitates in English"}
+
+    sel = select(lesson(tmp_path, clips, **UNKNOWN), LEN, classify=classify)
+    assert sel.path == "per-track", sel.reason
+    assert sel.assigned_by == "classifier"
+    assert sel.tracks["student"].path.endswith("audioGuest11234567890.m4a")
+    assert any("classifier" in w for w in sel.warnings)
+    assert len(asked) == 1
+
+
+def test_the_classifier_is_not_asked_when_the_names_settle_it(tmp_path, clips):
+    def classify(files, work):
+        raise AssertionError("should not be called")
+
+    assert select(lesson(tmp_path, clips, **RENUMBERED), LEN, classify=classify).path == "per-track"
+
+
+@pytest.mark.parametrize("answer,why", [
+    ({"student": "audioGuest11234567890.m4a", "teacher": "audioiPhone21234567890.m4a",
+      "confidence": 0.4, "reason": "both sound fluent"}, "not sure"),
+    ({"student": "audioGuest11234567890.m4a", "teacher": "audioGuest11234567890.m4a",
+      "confidence": 0.9, "reason": "x"}, "two roles"),
+    ({"student": "nothere.m4a", "teacher": "audioiPhone21234567890.m4a",
+      "confidence": 0.9, "reason": "x"}, "not there"),
+])
+def test_an_unsure_or_inconsistent_classifier_takes_the_mixed_path(tmp_path, clips, answer, why):
+    sel = select(lesson(tmp_path, clips, **UNKNOWN), LEN, classify=lambda f, w: answer)
+    assert sel.path == "mixed"
+    assert why in sel.reason
+
+
+def test_a_classifier_that_crashes_takes_the_mixed_path(tmp_path, clips):
+    def classify(files, work):
+        raise ConnectionError("network down")
+
+    sel = select(lesson(tmp_path, clips, **UNKNOWN), LEN, classify=classify)
+    assert sel.path == "mixed"
+    assert "classifier failed" in sel.reason
+
+
+def test_a_missing_mic_is_never_sent_to_the_classifier(tmp_path, clips):
+    def classify(files, work):
+        raise AssertionError("a voice that was not recorded cannot be classified into being")
+
+    sel = select(lesson(tmp_path, clips, **{STEVEN: "steven", SHARE: "share"}), LEN, classify=classify)
+    assert sel.path == "mixed"
+    assert "mic track is missing" in sel.reason
+
+
+def test_later_stages_read_the_saved_roles(tmp_path, clips):
+    from jp_lesson_distill.tracks import selected_paths
+    work = tmp_path / "work"
+    select(lesson(tmp_path, clips, **RENUMBERED), LEN, work=work)
+    paths = selected_paths(work)
+    assert paths["student"].name == "audioSteveSaito21936486817.m4a"
 
 
 def test_forcing_the_mixed_path_skips_the_tracks(tmp_path, clips):
