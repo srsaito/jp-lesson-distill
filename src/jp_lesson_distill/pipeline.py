@@ -49,9 +49,8 @@ from .quality import (
     marker_by_window,
     marker_verdict,
 )
-from .tracks import identify as identify_tracks
+from .tracks import classify_with_gemini, selected_paths
 from .tracks import FRAME_S, SOUND_DB, load_energy, relabel, snap_start
-from .tracks import tracks_dir as tracks_dir_of
 from .tracks import select as select_tracks
 
 CLIP_PAD = 15.0  # seconds of context on each side of a candidate
@@ -168,16 +167,20 @@ def _run(cfg: Config) -> Path | None:
 
     # Which Pass A path (ADR-0010). The mixed path is the required fallback, so every way the
     # tracks can be unusable ends here with a reason, never with a failed run.
-    selection = select_tracks(cfg.recording, total, cfg.tracks_mode, work)
+    def get_client():
+        nonlocal client
+        client = client or make_client(cfg.stream_timeout)
+        return client
+
+    # Which Pass A path (ADR-0010). The roles are worked out from the files (jld-8nv.7); Gemini
+    # is asked only when they cannot settle who is who.
+    selection = select_tracks(cfg.recording, total, cfg.tracks_mode, work,
+                              classify=classify_with_gemini(get_client, cfg.model))
     print(f"[tracks] {selection.path}: {selection.reason}")
     for warning in selection.warnings:
         print(f"[tracks] warning: {warning}")
 
     # pass A
-    def get_client():
-        nonlocal client
-        client = client or make_client(cfg.stream_timeout)
-        return client
 
     # A cached transcript keeps the path that made it: one made before the tracks were usable
     # (or before this code) is a mixed transcript, and still gets the label check below.
@@ -487,8 +490,7 @@ def _pass_a_tracks(cfg: Config, work: Path, audio: Path, total: float, get_clien
     energy = load_energy(work)
     tracks_dir = work / "tracks"
     win_s = cfg.window_minutes * 60
-    folder = tracks_dir_of(cfg.recording)
-    found = identify_tracks(folder)
+    found = selected_paths(work)
 
     role_windows: dict[str, list[tuple[Path, float]]] = {}
     for role in TRACK_PROMPTS:
